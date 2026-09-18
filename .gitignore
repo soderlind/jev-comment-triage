@@ -1,0 +1,9 @@
+# Dependencies
+/vendor/
+
+# Composer
+composer.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db

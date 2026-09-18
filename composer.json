@@ -1,0 +1,22 @@
+{
+	"name": "soderlind/jev-comment-triage",
+	"description": "Async Jev-powered comment triage for WordPress.",
+	"type": "wordpress-plugin",
+	"license": "GPL-2.0-or-later",
+	"require": {
+		"php": ">=8.3"
+	},
+	"require-dev": {
+		"brain/monkey": "^2.7",
+		"pestphp/pest": "^5.0"
+	},
+	"scripts": {
+		"test": "pest"
+	},
+	"config": {
+		"sort-packages": true,
+		"allow-plugins": {
+			"pestphp/pest-plugin": true
+		}
+	}
+}
