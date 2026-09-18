@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-18
+
+### Added
+
+- Privacy disclosure via `wp_add_privacy_policy_content`, and a
+  `jct_include_author_details` filter to stop sending author PII to the API.
+- Admin notice when `DISABLE_WP_CRON` is set, since the drain relies on cron.
+- `uninstall.php` to remove comment meta, the schedule, and transients.
+- Translation loading (`load_plugin_textdomain`).
+- Tests for `defer()` and for respecting WordPress's moderation decision.
+
+### Changed
+
+- **Respect WordPress's own moderation.** Triage now remembers the site's
+  would-be decision and only *downgrades* to spam/hold — clean comments are
+  published only if the site would have approved them anyway, never past a
+  "hold all comments" policy.
+
+### Fixed
+
+- Skip comments WordPress already flagged via the blocklist (spam/trash) — no
+  wasted API call.
+- Skip pingbacks and trackbacks.
+- Add a lock so overlapping cron runs cannot process the same batch twice.
+
 ## [1.3.0] - 2026-09-18
 
 ### Added
@@ -54,6 +79,7 @@ All notable changes to this project are documented here. The format is based on
 - Initial release: synchronous spam + toxicity triage on `pre_comment_approved`,
   scores stored as comment meta, and a "Jev" column on the admin Comments screen.
 
+[1.4.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.4.0
 [1.3.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.3.0
 [1.2.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.2.0
 [1.1.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.1.0

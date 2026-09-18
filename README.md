@@ -17,19 +17,24 @@ commenting stays fast even though moderation calls a remote API.
 ## How it works
 
 1. **On submit** (`pre_comment_approved`) — untrusted comments are held as
-   *pending* instantly, with **no API call**. Trusted users (`moderate_comments`)
-   and an unconfigured provider keep WordPress's own decision.
+   *pending* instantly, with **no API call**, while WordPress's own would-be
+   decision is remembered. Trusted users (`moderate_comments`), pingbacks and
+   trackbacks, an unconfigured provider, and comments WordPress already caught
+   with the blocklist (spam/trash) keep WordPress's decision.
 2. **On store** (`comment_post`) — the comment is tagged with a pending marker,
    a per-minute drain event is ensured, and a throttled immediate nudge
    (`spawn_cron`) is fired.
 3. **Background drain** (`jct_drain`, every minute) — a bounded batch of pending,
-   un-triaged comments is assessed in one Jev call each and routed:
+   un-triaged comments is assessed in one Jev call each and routed, **never
+   publishing past the site's own moderation policy**:
    - spam/scam ≥ threshold → **spam**
    - borderline or toxic → **held** for review
-   - clean → **approved**
+   - clean → WordPress's remembered decision (**approved** only if the site
+     would have approved it anyway; otherwise **held**)
 4. **Self-healing** — on an API error a comment keeps its pending marker and is
    retried on the next tick; after 3 attempts it is left held for a human.
-   Comments are never publicly visible before triage.
+   Comments are never publicly visible before triage, and a lock prevents
+   concurrent drains from double-processing.
 
 Scores are stored as the `_jev_triage` comment meta and shown in a **Jev** column
 on the admin Comments screen.
@@ -48,13 +53,21 @@ false positives out of the spam bucket.
 | ---- | ---- | ------- |
 | `jct_thresholds` | filter | Tune decision thresholds (`spam` 0.75, `scam` 0.65, `hold` 0.45, `toxicity_hold` 1.5, `link_assist` 0.50). |
 | `jct_batch_size` | filter | Comments processed per drain tick (default 20). |
+| `jct_include_author_details` | filter | Whether to send the author name, URL, and email to the AI service (default `true`). Return `false` for stricter privacy. |
 | `jct_triaged` | action | Fires after a decision: `do_action( 'jct_triaged', $comment_id, $assessment, $decision )`. |
 
 ```php
-// Be stricter, and process more per tick.
+// Be stricter, process more per tick, and stop sending author PII.
 add_filter( 'jct_thresholds', fn( $t ) => [ ...$t, 'spam' => 0.65 ] );
 add_filter( 'jct_batch_size', fn() => 50 );
+add_filter( 'jct_include_author_details', '__return_false' );
 ```
+
+## Privacy
+
+Comment text (and, unless disabled via `jct_include_author_details`, the author
+name, email, and URL) is sent to the TypeSafe (Jev) service for assessment. The
+plugin registers a suggested-privacy-policy snippet under **Settings → Privacy**.
 
 ## Accuracy
 

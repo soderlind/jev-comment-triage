@@ -33,35 +33,55 @@ function stub_evaluate( float $spam, float $scam, float $toxicity ): void {
 	);
 }
 
+/**
+ * Stub the stored base decision ('1' = WordPress would approve, '0' = hold).
+ */
+function stub_base( string $base ): void {
+	Functions\when( 'get_comment_meta' )->alias(
+		static fn( $id, $key, $single = true ) => \JevCommentTriage\BASE_META === $key ? $base : ''
+	);
+}
+
 beforeEach( function (): void {
 	Functions\when( 'get_option' )->justReturn( 2 );
-	Functions\when( 'get_comment_meta' )->justReturn( '' );
 	Functions\when( 'add_comment_meta' )->justReturn( true );
 	Functions\when( 'delete_comment_meta' )->justReturn( true );
 } );
 
 it( 'marks a spammy comment as spam', function (): void {
+	stub_base( '1' );
 	stub_evaluate( 0.99, 0.80, 0.10 );
 	Functions\expect( 'wp_set_comment_status' )->once()->with( 10, 'spam' );
 
 	process_comment( make_comment( 'buy cheap stuff http://x.example' ) );
 } );
 
-it( 'approves a clean comment', function (): void {
+it( 'approves a clean comment WordPress would allow', function (): void {
+	stub_base( '1' );
 	stub_evaluate( 0.02, 0.01, 0.00 );
 	Functions\expect( 'wp_set_comment_status' )->once()->with( 10, 'approve' );
 
 	process_comment( make_comment( 'Great post, thanks for sharing.' ) );
 } );
 
-it( 'holds a toxic comment', function (): void {
+it( 'holds a clean comment when WordPress would moderate', function (): void {
+	stub_base( '0' );
+	stub_evaluate( 0.02, 0.01, 0.00 );
+	Functions\expect( 'wp_set_comment_status' )->once()->with( 10, 'hold' );
+
+	process_comment( make_comment( 'Great post, thanks for sharing.' ) );
+} );
+
+it( 'holds a toxic comment regardless of base', function (): void {
+	stub_base( '1' );
 	stub_evaluate( 0.05, 0.02, 1.90 );
 	Functions\expect( 'wp_set_comment_status' )->once()->with( 10, 'hold' );
 
 	process_comment( make_comment( 'you are an idiot' ) );
 } );
 
-it( 'approves empty content without calling the API', function (): void {
+it( 'applies the base to empty content without calling the API', function (): void {
+	stub_base( '1' );
 	Functions\expect( 'AiProviderForJev\\evaluate' )->never();
 	Functions\expect( 'wp_set_comment_status' )->once()->with( 10, 'approve' );
 
@@ -69,6 +89,7 @@ it( 'approves empty content without calling the API', function (): void {
 } );
 
 it( 'retries on an API error and leaves the status unchanged', function (): void {
+	stub_base( '1' );
 	Functions\when( 'AiProviderForJev\\evaluate' )->justReturn( new WP_Error( 'jev_api_error', 'boom' ) );
 	Functions\expect( 'update_comment_meta' )->once(); // attempts incremented
 	Functions\expect( 'wp_set_comment_status' )->never();

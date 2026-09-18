@@ -1,11 +1,13 @@
 <?php
 /**
  * Plugin Name: Jev Comment Triage
- * Description: Uses AI Provider for Jev to auto-moderate comments asynchronously — a batched background job drains pending comments (spam/scam/toxicity) so comment submission stays fast.
+ * Description: Uses AI Provider for Jev to auto-moderate comments asynchronously — a batched background job triages pending comments (spam/scam/toxicity) while respecting WordPress's own moderation, keeping comment submission fast.
  * Requires Plugins: ai-provider-for-jev
  * Requires PHP: 8.3
- * Version: 1.3.0
+ * Version: 1.4.0
  * License: GPL-2.0-or-later
+ * Text Domain: jev-comment-triage
+ * Domain Path: /languages
  *
  * @package JevCommentTriage
  */
@@ -19,9 +21,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 const META_KEY      = '_jev_triage';
 const PENDING_META  = '_jct_pending';
 const ATTEMPTS_META = '_jct_attempts';
+const BASE_META     = '_jct_base';
 const EVENT         = 'jct_drain';
 const INTERVAL      = 'jct_minute';
 const MAX_ATTEMPTS  = 3;
+const LOCK_KEY      = 'jct_draining';
+
+/**
+ * Load translations.
+ */
+function load_textdomain(): void {
+	load_plugin_textdomain( 'jev-comment-triage', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+}
+add_action( 'init', __NAMESPACE__ . '\\load_textdomain' );
 
 /**
  * Default decision thresholds. Override with the `jct_thresholds` filter.
@@ -77,12 +89,16 @@ function count_links( string $content ): int {
  */
 function assess( array $commentdata, int $link_count ): array|\WP_Error {
 	$state = [
-		'comment'      => (string) ( $commentdata['comment_content'] ?? '' ),
-		'author'       => (string) ( $commentdata['comment_author'] ?? '' ),
-		'author_url'   => (string) ( $commentdata['comment_author_url'] ?? '' ),
-		'author_email' => (string) ( $commentdata['comment_author_email'] ?? '' ),
-		'link_count'   => $link_count,
+		'comment'    => (string) ( $commentdata['comment_content'] ?? '' ),
+		'link_count' => $link_count,
 	];
+
+	// Author details help accuracy but are PII; let sites opt out.
+	if ( (bool) apply_filters( 'jct_include_author_details', true, $commentdata ) ) {
+		$state['author']       = (string) ( $commentdata['comment_author'] ?? '' );
+		$state['author_url']   = (string) ( $commentdata['comment_author_url'] ?? '' );
+		$state['author_email'] = (string) ( $commentdata['comment_author_email'] ?? '' );
+	}
 
 	$response = \AiProviderForJev\evaluate(
 		$state,
@@ -195,11 +211,46 @@ register_deactivation_hook(
 );
 
 /**
- * Hold untrusted comments as pending so nothing is public until triage runs.
+ * Whether the comment is a regular visitor comment (not a pingback/trackback).
  *
- * The Jev call happens in the background, so comment submission stays fast.
- * Trusted users and an unconfigured/absent provider keep WordPress's own
- * decision.
+ * @param array $commentdata Comment data.
+ */
+function is_regular_comment( array $commentdata ): bool {
+	$type = (string) ( $commentdata['comment_type'] ?? '' );
+	return '' === $type || 'comment' === $type;
+}
+
+/**
+ * Registry of WordPress's own "would-be" decision, keyed by comment fingerprint,
+ * shared between defer() and enqueue() within a request.
+ *
+ * @return array<string, string>
+ */
+function &base_registry(): array {
+	static $registry = [];
+	return $registry;
+}
+
+/**
+ * Fingerprint a comment so defer() and enqueue() agree on the same entry.
+ *
+ * @param array $commentdata Comment data.
+ */
+function fingerprint( array $commentdata ): string {
+	return md5(
+		(string) ( $commentdata['comment_post_ID'] ?? '' ) . '|'
+		. (string) ( $commentdata['comment_author_email'] ?? '' ) . '|'
+		. (string) ( $commentdata['comment_content'] ?? '' )
+	);
+}
+
+/**
+ * Hold untrusted comments as pending so nothing is public until triage runs,
+ * while remembering WordPress's own decision so triage can respect it.
+ *
+ * Comments WordPress already rejected (spam/trash via the blocklist) are left
+ * untouched with no API call; pingbacks, trackbacks, trusted users, and an
+ * absent provider keep WordPress's decision.
  *
  * @param int|string|\WP_Error $approved    Current approval status.
  * @param array                $commentdata Comment data.
@@ -210,13 +261,23 @@ function defer( $approved, array $commentdata ) {
 		return $approved;
 	}
 
-	if ( is_trusted( (int) ( $commentdata['user_id'] ?? 0 ) ) ) {
+	if ( ! is_regular_comment( $commentdata ) || is_trusted( (int) ( $commentdata['user_id'] ?? 0 ) ) ) {
 		return $approved;
 	}
 
+	if ( 'spam' === $approved || 'trash' === $approved ) {
+		return $approved;
+	}
+
+	// Remember whether WordPress would have approved or held this comment.
+	$registry =& base_registry();
+	$registry[ fingerprint( $commentdata ) ] = ( '1' === (string) $approved ) ? '1' : '0';
+
 	return '0';
 }
-add_filter( 'pre_comment_approved', __NAMESPACE__ . '\\defer', 10, 2 );
+// Runs last so it captures the site's effective decision after other moderation
+// plugins, and remembers it for the background job.
+add_filter( 'pre_comment_approved', __NAMESPACE__ . '\\defer', PHP_INT_MAX, 2 );
 
 /**
  * Mark a new comment for the background drain and nudge it to run soon.
@@ -226,11 +287,19 @@ add_filter( 'pre_comment_approved', __NAMESPACE__ . '\\defer', 10, 2 );
  * @param array      $commentdata Comment data.
  */
 function enqueue( int $comment_id, $approved, array $commentdata ): void {
-	if ( ! provider_ready() || is_trusted( (int) ( $commentdata['user_id'] ?? 0 ) ) ) {
+	if ( ! provider_ready() || ! is_regular_comment( $commentdata ) || is_trusted( (int) ( $commentdata['user_id'] ?? 0 ) ) ) {
 		return;
 	}
 
+	if ( 'spam' === $approved || 'trash' === $approved ) {
+		return;
+	}
+
+	$registry =& base_registry();
+	$base     = $registry[ fingerprint( $commentdata ) ] ?? '0';
+
 	add_comment_meta( $comment_id, PENDING_META, 1, true );
+	add_comment_meta( $comment_id, BASE_META, $base, true );
 	ensure_scheduled();
 
 	// Nudge a near-immediate drain, at most once every 15s to avoid piling up.
@@ -249,28 +318,35 @@ add_action( 'comment_post', __NAMESPACE__ . '\\enqueue', 10, 3 );
  * triaged yet. Batch size is filterable via `jct_batch_size`.
  */
 function drain(): void {
-	if ( ! provider_ready() ) {
+	if ( ! provider_ready() || get_transient( LOCK_KEY ) ) {
 		return;
 	}
 
-	$batch = (int) apply_filters( 'jct_batch_size', 20 );
+	// Prevent overlapping cron runs from processing the same batch twice.
+	set_transient( LOCK_KEY, 1, 10 * MINUTE_IN_SECONDS );
 
-	$comments = get_comments(
-		[
-			'status'     => 'hold',
-			'number'     => $batch,
-			'orderby'    => 'comment_date_gmt',
-			'order'      => 'ASC',
-			'meta_query' => [
-				'relation' => 'AND',
-				[ 'key' => PENDING_META, 'compare' => 'EXISTS' ],
-				[ 'key' => META_KEY, 'compare' => 'NOT EXISTS' ],
-			],
-		]
-	);
+	try {
+		$batch = (int) apply_filters( 'jct_batch_size', 20 );
 
-	foreach ( $comments as $comment ) {
-		process_comment( $comment );
+		$comments = get_comments(
+			[
+				'status'     => 'hold',
+				'number'     => $batch,
+				'orderby'    => 'comment_date_gmt',
+				'order'      => 'ASC',
+				'meta_query' => [
+					'relation' => 'AND',
+					[ 'key' => PENDING_META, 'compare' => 'EXISTS' ],
+					[ 'key' => META_KEY, 'compare' => 'NOT EXISTS' ],
+				],
+			]
+		);
+
+		foreach ( $comments as $comment ) {
+			process_comment( $comment );
+		}
+	} finally {
+		delete_transient( LOCK_KEY );
 	}
 }
 add_action( EVENT, __NAMESPACE__ . '\\drain' );
@@ -285,11 +361,13 @@ add_action( EVENT, __NAMESPACE__ . '\\drain' );
  */
 function process_comment( \WP_Comment $comment ): void {
 	$comment_id = (int) $comment->comment_ID;
+	$base       = ( '1' === (string) get_comment_meta( $comment_id, BASE_META, true ) ) ? '1' : '0';
 	$content    = trim( (string) $comment->comment_content );
 
 	if ( '' === $content ) {
 		delete_comment_meta( $comment_id, PENDING_META );
-		wp_set_comment_status( $comment_id, 'approve' );
+		delete_comment_meta( $comment_id, BASE_META );
+		finalize( $comment_id, $base ); // nothing to assess; respect WordPress's decision
 		return;
 	}
 
@@ -314,8 +392,9 @@ function process_comment( \WP_Comment $comment ): void {
 		return;
 	}
 
-	// Base status "approve": clean comments are published, the rest are routed.
-	$decision = decide( $assessment, $link_count, '1' );
+	// The base is WordPress's own decision, so triage never publishes past the
+	// site's moderation policy — it only downgrades to spam or hold.
+	$decision = decide( $assessment, $link_count, $base );
 
 	add_comment_meta(
 		$comment_id,
@@ -324,11 +403,22 @@ function process_comment( \WP_Comment $comment ): void {
 		true
 	);
 	delete_comment_meta( $comment_id, PENDING_META );
+	delete_comment_meta( $comment_id, BASE_META );
 
-	$map = [ 'spam' => 'spam', '1' => 'approve', '0' => 'hold' ];
-	wp_set_comment_status( $comment_id, $map[ (string) $decision ] ?? 'hold' );
+	finalize( $comment_id, (string) $decision );
 
 	do_action( 'jct_triaged', $comment_id, $assessment, (string) $decision );
+}
+
+/**
+ * Apply a decision ('spam', '1', or '0') to a comment's status.
+ *
+ * @param int    $comment_id Comment ID.
+ * @param string $decision   Decision value.
+ */
+function finalize( int $comment_id, string $decision ): void {
+	$map = [ 'spam' => 'spam', '1' => 'approve', '0' => 'hold' ];
+	wp_set_comment_status( $comment_id, $map[ $decision ] ?? 'hold' );
 }
 
 /**
@@ -369,3 +459,36 @@ function render_column( string $column, int $comment_id ): void {
 	);
 }
 add_action( 'manage_comments_custom_column', __NAMESPACE__ . '\\render_column', 10, 2 );
+
+/**
+ * Disclose that comment data is sent to a third-party AI service.
+ */
+function register_privacy_content(): void {
+	if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
+		return;
+	}
+
+	$content = __( 'When you submit a comment, its text — and, unless the site disables it, your name, email address, and website — is sent to the TypeSafe (Jev) service to check it for spam, scams, and abuse.', 'jev-comment-triage' );
+	wp_add_privacy_policy_content( 'Jev Comment Triage', wp_kses_post( wpautop( $content ) ) );
+}
+add_action( 'admin_init', __NAMESPACE__ . '\\register_privacy_content' );
+
+/**
+ * Warn admins when WP-Cron is disabled, since the drain relies on it.
+ */
+function cron_notice(): void {
+	if ( ! current_user_can( 'manage_options' ) || ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+		return;
+	}
+
+	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+	if ( ! $screen || ! in_array( $screen->id, [ 'edit-comments', 'plugins' ], true ) ) {
+		return;
+	}
+
+	printf(
+		'<div class="notice notice-warning"><p>%s</p></div>',
+		esc_html__( 'Jev Comment Triage: WP-Cron is disabled (DISABLE_WP_CRON). Make sure a system cron runs wp-cron.php, or deferred comments will not be triaged.', 'jev-comment-triage' )
+	);
+}
+add_action( 'admin_notices', __NAMESPACE__ . '\\cron_notice' );
