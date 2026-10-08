@@ -14,12 +14,13 @@ All notable changes to this project are documented here. The format is based on
   content and classified as on-topic, off-topic, or unclear.
 - Comments on the same post are judged in one Jev request (up to 20, set with
   `jct_comments_per_request`), so the post is sent once. A malformed answer
-  retries only the affected comment, and a rejected request (HTTP 4xx) is split
-  until the offending comment is isolated.
-- Spam-verdict cache keyed on the raw text (including link markup), author
-  website host, email domain, model, and question version, shared across the
-  network. It runs in shadow mode (counting would-be hits in
-  `jct_spam_cache_stats`) until enabled with the `jct_spam_cache` filter.
+  retries only the affected comment, and a rejected request body (HTTP 413 or
+  422) is split until the offending comment is isolated.
+- Spam-verdict cache keyed on the exact comment payload Jev sees (text, link
+  count, and author name, URL, and email when sent), the model, the question
+  version, and a per-install salt, shared across the network. It runs in
+  shadow mode, counting would-be hits in atomic network-wide counters, until
+  enabled with the `jct_spam_cache` filter.
 - Optional `jct_min_words` rule that holds very short, link-free comments
   without calling Jev (off by default).
 - `bin/benchmark.php`, a WP-CLI end-to-end benchmark and routing harness with

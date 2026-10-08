@@ -9,8 +9,10 @@ declare( strict_types=1 );
 
 use Brain\Monkey\Functions;
 
+use function JevCommentTriage\comment_payload;
 use function JevCommentTriage\count_links;
 use function JevCommentTriage\decide;
+use function JevCommentTriage\is_request_rejection;
 use function JevCommentTriage\is_trusted;
 use function JevCommentTriage\spam_cache_key;
 use function JevCommentTriage\thresholds;
@@ -39,18 +41,57 @@ it( 'counts words across any whitespace', function (): void {
 	expect( word_count( '' ) )->toBe( 0 );
 } );
 
-it( 'keys the spam cache on normalized text', function (): void {
-	expect( spam_cache_key( "BUY  cheap\nPills" ) )->toBe( spam_cache_key( 'buy cheap pills' ) );
-	expect( spam_cache_key( 'buy cheap pills' ) )->not->toBe( spam_cache_key( 'buy cheap watches' ) );
+describe( 'spam cache key', function (): void {
+	beforeEach( function (): void {
+		$salt = 'salt-a';
+		Functions\when( 'get_site_option' )->alias( static function () use ( &$salt ) {
+			return $salt;
+		} );
+		$this->salt = &$salt;
+	} );
+
+	/**
+	 * Key for a comment as the plugin would build it.
+	 */
+	function key_for( string $content, string $name = 'Reader', string $url = '', string $email = 'reader@example.test' ): string {
+		return spam_cache_key(
+			comment_payload(
+				[ 'comment_content' => $content, 'comment_author' => $name, 'comment_author_url' => $url, 'comment_author_email' => $email ],
+				count_links( $content )
+			)
+		);
+	}
+
+	it( 'is stable for an identical submission', function (): void {
+		expect( key_for( 'Great post! thanks' ) )->toBe( key_for( 'Great post! thanks' ) );
+	} );
+
+	it( 'changes with anything the spam question can read', function (): void {
+		$plain = key_for( 'Great post! thanks' );
+
+		expect( key_for( 'Great post! <a href="http://casino.example">thanks</a>' ) )->not->toBe( $plain );
+		expect( key_for( 'GREAT POST! THANKS' ) )->not->toBe( $plain );
+		expect( key_for( 'Great post! thanks', 'Cheap Pills' ) )->not->toBe( $plain );
+		expect( key_for( 'Great post! thanks', 'Reader', 'http://casino.example/win' ) )->not->toBe( $plain );
+		expect( key_for( 'Great post! thanks', 'Reader', '', 'other@example.test' ) )->not->toBe( $plain );
+	} );
+
+	it( 'changes when the install salt is rotated', function (): void {
+		$before     = key_for( 'Great post! thanks' );
+		$this->salt = 'salt-b';
+
+		expect( key_for( 'Great post! thanks' ) )->not->toBe( $before );
+	} );
 } );
 
-it( 'keys the spam cache on link targets and author signals, not just visible text', function (): void {
-	$plain = spam_cache_key( 'Great post! thanks', '', 'reader@example.test' );
-
-	expect( spam_cache_key( 'Great post! <a href="http://casino.example">thanks</a>', '', 'reader@example.test' ) )->not->toBe( $plain );
-	expect( spam_cache_key( 'Great post! thanks', 'http://casino.example/win', 'reader@example.test' ) )->not->toBe( $plain );
-	expect( spam_cache_key( 'Great post! thanks', '', 'bot@casino.example' ) )->not->toBe( $plain );
-	expect( spam_cache_key( 'Great post! thanks', '', 'other.reader@EXAMPLE.test' ) )->toBe( $plain );
+it( 'splits only on request-body rejections', function (): void {
+	foreach ( [ 413, 422 ] as $status ) {
+		expect( is_request_rejection( new WP_Error( 'jev_api_error', 'x', [ 'status' => $status ] ) ) )->toBeTrue();
+	}
+	foreach ( [ 400, 401, 403, 404, 405, 429, 500, 529 ] as $status ) {
+		expect( is_request_rejection( new WP_Error( 'jev_api_error', 'x', [ 'status' => $status ] ) ) )->toBeFalse();
+	}
+	expect( is_request_rejection( new WP_Error( 'http_request_failed', 'timeout' ) ) )->toBeFalse();
 } );
 
 describe( 'decide', function (): void {

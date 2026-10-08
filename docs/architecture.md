@@ -69,7 +69,7 @@ All runtime components are functions in `jev-comment-triage.php`.
 | Jev assessment | Sends the post once as state, asks relevance/spam/abuse questions per comment, and validates each comment's answers separately | `comment_payload()`, `comment_questions()`, `assess_many()`, `assess_isolated()`, `is_request_rejection()`, `parse_answers()`, `assess()` | `AiProviderForJev\evaluate()` |
 | Decision policy | Applies risk-scaled thresholds to the three judgments | `thresholds()`, `decide()` | `jct_thresholds` filter |
 | Comment processor | Groups comments by post, chunks requests, applies the short-comment rule and spam cache, records retries, persists results, and changes status | `process_comments()`, `process_chunk()`, `apply_assessment()`, `record_failure()`, `finalize()` | Comment meta, WordPress status API |
-| Spam cache | Stores confident spam verdicts by normalized-text hash and counts would-be hits | `spam_cache_key()`, `record_cache_stats()` | Site transients, `jct_spam_cache_stats` site option |
+| Spam cache | Stores confident spam verdicts by a hash of the exact comment payload and counts would-be hits atomically | `spam_cache_key()`, `cache_salt()`, `record_cache_stats()`, `increment_counter()`, `cache_stats()` | Site transients, `jct_spam_cache_salt` and `jct_spam_cache_stats_*` site options |
 | Administration | Displays the result and explains privacy and cron requirements | `add_column()`, `render_column()`, `register_privacy_content()`, `cron_notice()` | WordPress admin hooks |
 | Cleanup | Removes schedules, transients, and plugin-owned metadata on uninstall | `uninstall.php` | WordPress uninstall process |
 
@@ -111,12 +111,21 @@ shape; the admin column labels them as from an earlier version.
 ### Spam cache entry
 
 A site transient named `jct_spam_` plus an MD5 of schema version, model, the
-author's website host, the author's email domain, and the lowercased,
-whitespace-collapsed raw text (link markup kept, so `href` targets count). The
-key covers every signal the spam judgment can use, so a generic phrase sent
-with a spam link or spam author cannot mark that phrase as spam for others. It holds only `version`,
-`spam`, and `abusive`, is written when spam ≥ `0.98`, and expires after seven
-days. Relevance is never cached, because it depends on the post.
+per-install salt, and the JSON of the exact `comment_payload()` sent to Jev:
+content (with any link markup), link count, and — unless
+`jct_include_author_details` is off — author name, URL, and email. Two
+submissions that differ in anything the spam question can read never share a
+verdict. The post is deliberately excluded: the cache exists to recognise the
+same submission replayed on other posts and sites, only verdicts of at least
+`0.98` are stored, and shadow mode's `agreed` counter measures whether a
+verdict holds on another post before the cache is enabled. An entry holds only
+`version`, `spam`, and `abusive` and expires after seven days. Relevance is
+never cached, because it depends on the post.
+
+The `jct_spam_cache_salt` site option is created on first use. Uninstall
+deletes it, which orphans every earlier verdict wherever it is stored —
+including a persistent object cache that uninstall cannot enumerate — so a
+reinstall never reuses them.
 
 ### Retry count
 
@@ -195,9 +204,10 @@ Trigger: the recurring or immediate `jct_drain` WP-Cron event.
    known relevance choice, confidence and every probability within `0..1`,
    all relevance options present, and numeric Noul values within `0..1`.
 8. `assess_isolated()` wraps `assess_many()`. If Jev rejects the request (HTTP
-   4xx other than 401, 403, 408, or 429), it splits the chunk in half and
-   retries each half until the offending comment stands alone. Outages,
-   timeouts, auth failures, and rate limits are not split. Each comment whose
+   413 or 422 — the statuses for a rejected body), it splits the chunk in half
+   and retries each half until the offending comment stands alone. Outages,
+   timeouts, auth or configuration errors (such as 404), and rate limits are
+   not split. Each comment whose
    own request failed, or whose answers are invalid, calls `record_failure()`. Attempts one and two
    remain pending for a later drain. At attempt three, it removes
    `_jct_pending` and leaves the comment held.
@@ -212,7 +222,8 @@ Trigger: the recurring or immediate `jct_drain` WP-Cron event.
     pending/base metadata, updates the status through `finalize()`, and fires
     `jct_triaged`.
 12. `record_cache_stats()` adds this run's cache counters to the
-    `jct_spam_cache_stats` site option, and a `finally` block removes the lock.
+    network-wide counters with one atomic SQL increment each, and a `finally`
+    block removes the lock.
 
 ## Boundaries and constraints
 
@@ -282,7 +293,8 @@ second drain process.
   questions rather than in shared state, and the live fixtures include a
   prompt-injection attempt, which was routed to spam.
 - `parse_answers()` validates every answer before policy code consumes it.
-- The spam cache stores a hash and two probabilities, not comment text.
+- The spam cache stores a salted hash and two probabilities, not comment text
+  or author details.
 - Author PII is included by default and can be excluded with
   `jct_include_author_details`.
 - API credentials remain in AI Provider for Jev and are not owned by this
@@ -306,11 +318,13 @@ second drain process.
   ready.
 - Deactivation unschedules `jct_drain`.
 - `uninstall.php` clears the schedule, both transients, all four
-  plugin-owned comment-meta keys, the spam-cache entries, and the cache
-  counters.
-- The `jct_spam_cache_stats` site option (`lookups`, `hits`, `agreed`) is the
-  evidence for enabling `jct_spam_cache`: `agreed` / `hits` is how often Jev
-  confirmed a cached verdict.
+  plugin-owned comment-meta keys, the cache salt (orphaning every cached
+  verdict), the database-stored cache entries, and the cache counters.
+- The `jct_spam_cache_stats_lookups`, `_hits`, and `_agreed` site options, read
+  together with `cache_stats()`, are the evidence for enabling
+  `jct_spam_cache`: `agreed` / `hits` is how often Jev confirmed a cached
+  verdict. Each is its own row, incremented in SQL, because drains on
+  different sites do not share a lock.
 - `cron_notice()` warns administrators on the Comments and Plugins screens when
   `DISABLE_WP_CRON` is enabled. Supplying a real system cron remains an
   operational responsibility outside the plugin.
@@ -324,8 +338,8 @@ classes and constants needed to load the production entry point.
 | Test file | Architectural responsibility |
 |---|---|
 | `tests/Unit/DeferTest.php` | Eligibility, deferral, and preservation of WordPress decisions |
-| `tests/Unit/LogicTest.php` | Link and word counting, cache-key normalization and its sensitivity to link targets and author signals, decision policy, threshold merging, and trusted-user checks |
-| `tests/Unit/ProcessCommentTest.php` | Request shape, outcomes per judgment, per-post batching and chunking, per-comment retries, isolation of a comment that gets a request rejected, no splitting during outages, spam cache (store, shadow, enabled), the short-comment rule, and the admin column text |
+| `tests/Unit/LogicTest.php` | Link and word counting, cache-key sensitivity to every spam-visible field and to salt rotation, which errors may split a request, decision policy, threshold merging, and trusted-user checks |
+| `tests/Unit/ProcessCommentTest.php` | Request shape, outcomes per judgment, per-post batching and chunking, per-comment retries, isolation of a comment that gets a request rejected, no splitting on outages or configuration errors, atomic counter SQL, spam cache (store, shadow, enabled), the short-comment rule, and the admin column text |
 
 The tests are unit-level simulations. They do not verify real WP-Cron scheduling,
 transient races, WordPress database behavior, provider HTTP behavior, or
@@ -389,13 +403,13 @@ plugin:
   retained after eventual success.
 - An outage, timeout, or rate limit counts an attempt for every comment in the
   chunk, so a long outage can use up attempts for many comments at once.
-  Rejected requests are split to isolate the cause, which costs up to roughly
-  two extra requests per level of splitting.
+  Rejected bodies (413/422) are split to isolate the cause, which costs up to
+  roughly two extra requests per level of splitting.
 - Default thresholds were checked against 20 labelled fixtures on one post.
   They are a starting point; TypeSafe's guidance is to evaluate thresholds on
   the site's own comments.
 - The spam cache's hit rate on real traffic is unknown; it ships in shadow mode
-  so `jct_spam_cache_stats` can measure it first.
+  so its counters can measure it first.
 - There is no integration test against a real WordPress database, WP-Cron, or
   the configured AI Provider for Jev. The closest substitute is
   `bin/benchmark.php`, which exercises the full path end to end against a live

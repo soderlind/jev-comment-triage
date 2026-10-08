@@ -33,11 +33,12 @@ commenting stays fast even though moderation calls a remote API.
    publishing past the site's own moderation policy**.
 4. **Self-healing** — a comment whose answer is malformed keeps its pending
    marker and is retried on the next tick; after 3 attempts it is left held for
-   a human. If Jev rejects a whole request (HTTP 4xx, for example because one
-   comment is too large), the request is split in half and retried until the
-   offending comment is isolated, so the others are still judged. Outages,
-   timeouts, and rate limits leave the whole chunk pending without splitting. Comments are never publicly visible before triage, and a
-   lock prevents concurrent drains from double-processing.
+   a human. If Jev rejects a request body (HTTP 413 or 422, for example because
+   one comment is too large), the request is split in half and retried until
+   the offending comment is isolated, so the others are still judged. Outages,
+   timeouts, auth or configuration errors, and rate limits leave the whole
+   chunk pending without splitting. Comments are never publicly visible before
+   triage, and a lock prevents concurrent drains from double-processing.
 
 The answers and decision are stored as the `_jev_triage` comment meta and shown
 in a **Jev** column on the admin Comments screen.
@@ -67,17 +68,21 @@ Thresholds rise with the cost of a wrong action:
 
 ## Fewer calls when the answer is known
 
-- **Spam-verdict cache.** When Jev is at least `0.98` sure a comment is spam, a
-  hash of everything that verdict can rest on — the raw text including link
-  markup, the author's website host, and email domain, plus model and question
-  version — is cached network-wide for 7 days, so the same spam blasted across
-  posts or subsites can be recognized. Because link targets and author signals
-  are part of the key, a generic "Great post!" sent with a spam link cannot
-  mark that phrase as spam for everyone else. Only spam verdicts are cached: relevance depends on the
-  post, and borderline answers can vary between runs. The cache runs in
-  **shadow mode** by default — Jev is still asked, and the `jct_spam_cache_stats`
-  site option counts `lookups`, `hits`, and how often Jev `agreed`. Turn it on
-  with the `jct_spam_cache` filter once those numbers justify it.
+- **Spam-verdict cache.** When Jev is at least `0.98` sure a comment is spam,
+  the verdict is cached network-wide for 7 days under a hash of the exact
+  comment payload Jev saw — text with any link markup, link count, and (unless
+  `jct_include_author_details` is off) the author name, URL, and email — plus
+  the model, question version, and a per-install salt. The same submission
+  replayed on another post or subsite is then recognized, while a submission
+  that differs in anything the spam question can read never shares a verdict.
+  The post itself is deliberately not part of the key, since recognizing
+  cross-post replays is the point. Only spam verdicts are cached: relevance
+  depends on the post, and borderline answers can vary between runs. The cache
+  runs in **shadow mode** by default — Jev is still asked, and network-wide
+  counters (`jct_spam_cache_stats_lookups`, `_hits`, `_agreed`, incremented
+  atomically) record how often the cache would have answered and how often
+  Jev agreed. Turn it on with the `jct_spam_cache` filter once those numbers
+  justify it.
 - **Optional short-comment rule.** With `jct_min_words` set, link-free comments
   shorter than that are held without calling Jev. It is off by default because
   whether "Thanks!" should be published is a site policy.
@@ -108,9 +113,9 @@ add_filter( 'jct_include_author_details', '__return_false' );
 
 Comment text and the related post title and content (and, unless disabled via
 `jct_include_author_details`, the author name, email, and URL) are sent to the
-TypeSafe (Jev) service. The spam cache stores only a hash of the comment text
-and two probabilities. The plugin registers a suggested privacy-policy snippet
-under **Settings → Privacy**.
+TypeSafe (Jev) service. The spam cache stores only a salted hash of the
+comment and its author details, plus two probabilities. The plugin registers a
+suggested privacy-policy snippet under **Settings → Privacy**.
 
 ## Benchmark
 
@@ -152,9 +157,11 @@ comment) drained 3.25 comments/s on the same site and held abusive or
 threatening comments only when its confidence happened to fall below the
 threshold.
 
-In shadow mode the cache would have answered 8 repeated spam comments in rounds
-2 and 3, and Jev agreed with all 8. With `spam-cache` enabled, those 8 skipped
-Jev (156 questions instead of 180) and routing stayed 60 / 60.
+Each round posts to its own fixture post, so rounds 2 and 3 replay round 1's
+exact submissions on other posts. In shadow mode the cache would have answered
+8 of those replays, and Jev — judging them on a different post — agreed with
+all 8. With `spam-cache` enabled, those replays skipped Jev and routing stayed
+60 / 60.
 
 > **WP-Cron note:** the drain relies on WP-Cron. On low-traffic sites, add a
 > real system cron calling `wp-cron.php` (and set `DISABLE_WP_CRON`) so the

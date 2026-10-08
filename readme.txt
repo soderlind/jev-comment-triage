@@ -29,7 +29,7 @@ The Jev call runs **asynchronously**, off the comment-submit request, so comment
 
 = Privacy =
 
-Comment text and the related post title and content — and, unless disabled with the `jct_include_author_details` filter, the author name, email, and URL — are sent to the TypeSafe (Jev) service. The spam cache stores only a hash of the comment text and two probabilities. The plugin registers a suggested privacy-policy snippet under Settings → Privacy.
+Comment text and the related post title and content — and, unless disabled with the `jct_include_author_details` filter, the author name, email, and URL — are sent to the TypeSafe (Jev) service. The spam cache stores only a salted hash of the comment and its author details, plus two probabilities. The plugin registers a suggested privacy-policy snippet under Settings → Privacy.
 
 = Hooks =
 

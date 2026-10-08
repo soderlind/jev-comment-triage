@@ -47,7 +47,9 @@ const COMMENTS_PER_REQUEST = 20;
 const SPAM_CACHE_PREFIX    = 'jct_spam_';
 const SPAM_CACHE_MIN       = 0.98;
 const SPAM_CACHE_TTL       = 604800; // 7 days.
-const CACHE_STATS_OPTION   = 'jct_spam_cache_stats';
+const CACHE_STATS_OPTION   = 'jct_spam_cache_stats'; // Prefix; one option per counter.
+const CACHE_COUNTERS       = [ 'lookups', 'hits', 'agreed' ];
+const CACHE_SALT_OPTION    = 'jct_spam_cache_salt';
 
 /**
  * Load translations.
@@ -286,8 +288,8 @@ function assess_many( array $postdata, array $items ): array|\WP_Error {
 /**
  * Judge comments like assess_many(), isolating comments that break a request.
  *
- * A rejected request (HTTP 4xx other than auth or rate limiting) can be caused
- * by a single comment, for example one that is too large. Such a chunk is split
+ * A rejected request body (HTTP 413 or 422) can be caused by a single comment,
+ * for example one that is too large. Such a chunk is split
  * in half and retried, so only the offending comment uses up its attempts.
  * Outages, timeouts, auth failures, and rate limits are returned for every
  * comment unchanged, so they do not multiply into more requests.
@@ -313,8 +315,12 @@ function assess_isolated( array $postdata, array $items ): array {
 }
 
 /**
- * Whether an API error means the request itself was rejected, as opposed to
- * an outage, timeout, auth problem, or rate limit.
+ * Whether an API error means the request body itself was rejected — the only
+ * failures one comment can cause — as opposed to an outage, timeout, auth,
+ * configuration, or rate-limit problem that splitting would only multiply.
+ *
+ * TypeSafe documents 422 for a body that fails validation; 413 is the standard
+ * status for a body that is too large.
  *
  * @param \WP_Error $error Error from the provider.
  */
@@ -322,7 +328,7 @@ function is_request_rejection( \WP_Error $error ): bool {
 	$data   = $error->get_error_data();
 	$status = is_array( $data ) ? (int) ( $data['status'] ?? 0 ) : 0;
 
-	return $status >= 400 && $status < 500 && ! in_array( $status, [ 401, 403, 408, 429 ], true );
+	return in_array( $status, [ 413, 422 ], true );
 }
 
 /**
@@ -638,8 +644,15 @@ function process_chunk( array $postdata, array $comments, array &$stats ): void 
 			continue;
 		}
 
-		$cache_key = spam_cache_key( $content, (string) $comment->comment_author_url, (string) $comment->comment_author_email );
-		$cached    = get_site_transient( SPAM_CACHE_PREFIX . $cache_key );
+		$commentdata = [
+			'comment_content'      => $comment->comment_content,
+			'comment_author'       => $comment->comment_author,
+			'comment_author_url'   => $comment->comment_author_url,
+			'comment_author_email' => $comment->comment_author_email,
+			'user_id'              => (int) $comment->user_id,
+		];
+		$cache_key   = spam_cache_key( comment_payload( $commentdata, $link_count ) );
+		$cached      = get_site_transient( SPAM_CACHE_PREFIX . $cache_key );
 		++$stats['lookups'];
 
 		if ( is_array( $cached ) ) {
@@ -653,13 +666,7 @@ function process_chunk( array $postdata, array $comments, array &$stats ): void 
 		}
 
 		$items[ $comment_id ] = [
-			'commentdata' => [
-				'comment_content'      => $comment->comment_content,
-				'comment_author'       => $comment->comment_author,
-				'comment_author_url'   => $comment->comment_author_url,
-				'comment_author_email' => $comment->comment_author_email,
-				'user_id'              => (int) $comment->user_id,
-			],
+			'commentdata' => $commentdata,
 			'link_count'  => $link_count,
 			'cache_key'   => $cache_key,
 		];
@@ -755,34 +762,49 @@ function word_count( string $content ): int {
 /**
  * Cache key for a confident spam verdict on this exact submission.
  *
- * Covers everything the spam judgment can rely on: the raw text including any
- * link markup, the author's website host, and the author's email domain. A
- * generic phrase posted with a spam link or spam website therefore does not
- * mark the same phrase as spam for everyone else. The model and schema version
- * are included so a model or question change does not reuse old verdicts.
+ * Hashes the exact comment payload Jev sees — content, link count, and, when
+ * `jct_include_author_details` allows it, the author name, URL, and email —
+ * so two submissions that differ in anything the spam question can read never
+ * share a verdict. The post is deliberately left out: the cache exists to
+ * recognise the same submission replayed on other posts and sites, and only
+ * verdicts of at least SPAM_CACHE_MIN are stored. Shadow mode's `agreed`
+ * counter measures whether that holds before anyone enables the cache.
  *
- * @param string $content      Comment text.
- * @param string $author_url   Comment author URL.
- * @param string $author_email Comment author email.
+ * The model, schema version, and a per-install salt are included, so a model
+ * or question change, or an uninstall, never reuses old verdicts — even ones
+ * held in a persistent object cache that uninstall cannot enumerate.
+ *
+ * @param array<string, mixed> $payload Payload from comment_payload().
  */
-function spam_cache_key( string $content, string $author_url = '', string $author_email = '' ): string {
-	$lower = static fn( string $text ): string => function_exists( 'mb_strtolower' ) ? mb_strtolower( $text ) : strtolower( $text );
-
-	$text   = $lower( (string) preg_replace( '/\s+/u', ' ', trim( $content ) ) );
-	$host   = $lower( (string) parse_url( $author_url, PHP_URL_HOST ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- host only.
-	$domain = $lower( (string) substr( (string) strrchr( $author_email, '@' ), 1 ) );
-	$model  = '';
-
+function spam_cache_key( array $payload ): string {
+	$model    = '';
 	$settings = \AiProviderForJev\Settings\SettingsManager::instance();
 	if ( method_exists( $settings, 'get_model' ) ) {
 		$model = (string) $settings->get_model();
 	}
 
-	return md5( implode( '|', [ SCHEMA_VERSION, $model, $host, $domain, $text ] ) );
+	return md5( SCHEMA_VERSION . '|' . $model . '|' . cache_salt() . '|' . (string) json_encode( $payload ) );
 }
 
 /**
- * Accumulate network-wide spam-cache counters.
+ * Per-install salt for spam-cache keys, created on first use.
+ *
+ * Uninstall deletes it, which orphans every earlier verdict wherever it is
+ * stored; orphaned entries simply expire.
+ */
+function cache_salt(): string {
+	$salt = get_site_option( CACHE_SALT_OPTION );
+
+	if ( ! is_string( $salt ) || '' === $salt ) {
+		add_site_option( CACHE_SALT_OPTION, wp_generate_password( 20, false ) );
+		$salt = get_site_option( CACHE_SALT_OPTION );
+	}
+
+	return is_string( $salt ) ? $salt : '';
+}
+
+/**
+ * Add this run's spam-cache counters to the network-wide totals.
  *
  * In shadow mode these show how often the cache would have answered and how
  * often Jev agreed, before anyone turns `jct_spam_cache` on.
@@ -790,18 +812,54 @@ function spam_cache_key( string $content, string $author_url = '', string $autho
  * @param array<string, int> $stats Counters from this run.
  */
 function record_cache_stats( array $stats ): void {
-	if ( empty( $stats['lookups'] ) ) {
+	foreach ( CACHE_COUNTERS as $counter ) {
+		increment_counter( $counter, (int) ( $stats[ $counter ] ?? 0 ) );
+	}
+}
+
+/**
+ * Atomically add to one network-wide counter.
+ *
+ * Drains on different sites do not share a lock, so a read-modify-write would
+ * lose increments. Each counter is its own option row, incremented in SQL.
+ *
+ * @param string $counter Counter name from CACHE_COUNTERS.
+ * @param int    $by      Amount to add.
+ */
+function increment_counter( string $counter, int $by ): void {
+	global $wpdb;
+
+	if ( $by <= 0 || ! is_object( $wpdb ) ) {
 		return;
 	}
 
-	$stored = get_site_option( CACHE_STATS_OPTION, [] );
-	$stored = is_array( $stored ) ? $stored : [];
+	$option = CACHE_STATS_OPTION . '_' . $counter;
 
-	foreach ( $stats as $key => $value ) {
-		$stored[ $key ] = (int) ( $stored[ $key ] ?? 0 ) + (int) $value;
+	if ( is_multisite() ) {
+		$network_id = get_current_network_id();
+		add_network_option( $network_id, $option, 0 );
+		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->sitemeta} SET meta_value = meta_value + %d WHERE site_id = %d AND meta_key = %s", $by, $network_id, $option ) );
+		wp_cache_delete( $network_id . ':' . $option, 'site-options' );
+		return;
 	}
 
-	update_site_option( CACHE_STATS_OPTION, $stored );
+	add_option( $option, 0, '', false );
+	$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = option_value + %d WHERE option_name = %s", $by, $option ) );
+	wp_cache_delete( $option, 'options' );
+}
+
+/**
+ * Current network-wide spam-cache counters.
+ *
+ * @return array<string, int> lookups, hits, and agreed.
+ */
+function cache_stats(): array {
+	$stats = [];
+	foreach ( CACHE_COUNTERS as $counter ) {
+		$stats[ $counter ] = (int) get_site_option( CACHE_STATS_OPTION . '_' . $counter, 0 );
+	}
+
+	return $stats;
 }
 
 /**

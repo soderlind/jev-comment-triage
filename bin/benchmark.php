@@ -91,12 +91,19 @@ function fixtures(): array {
 }
 
 /**
- * Spam-cache key for a fixture, matching what the plugin computes for it.
+ * Spam-cache key for a fixture as submitted, matching what the plugin computes.
  *
- * @param array{content:string,url:string,email:string} $fixture Fixture.
+ * @param array{author:string,content:string,url:string,email:string} $fixture Fixture.
  */
 function cache_key( array $fixture ): string {
-	return Triage\SPAM_CACHE_PREFIX . Triage\spam_cache_key( $fixture['content'], $fixture['url'], $fixture['email'] );
+	$commentdata = [
+		'comment_content'      => $fixture['content'],
+		'comment_author'       => $fixture['author'],
+		'comment_author_url'   => $fixture['url'],
+		'comment_author_email' => $fixture['email'],
+	];
+
+	return Triage\SPAM_CACHE_PREFIX . Triage\spam_cache_key( Triage\comment_payload( $commentdata, Triage\count_links( $fixture['content'] ) ) );
 }
 
 /**
@@ -178,7 +185,7 @@ $thresholds = Triage\thresholds();
 \WP_CLI::log( 'Comments per request: ' . (int) apply_filters( 'jct_comments_per_request', Triage\COMMENTS_PER_REQUEST ) );
 
 $original_moderation = get_option( 'comment_moderation' );
-$original_stats      = get_site_option( Triage\CACHE_STATS_OPTION, null );
+$original_stats      = Triage\cache_stats();
 
 if ( $relax_holding && '1' === (string) $original_moderation ) {
 	// Override in memory only: nothing is stored, and other requests keep the
@@ -190,70 +197,94 @@ if ( $relax_holding && '1' === (string) $original_moderation ) {
 }
 
 $fixtures    = fixtures();
-$post_id     = 0;
+$post_ids    = [];
 $comment_ids = [];
+$cache_keys  = [];
 
-// Any cached verdicts for fixture texts would skew the run, so start clean.
+// Any cached verdicts for the fixtures would skew the run, so start clean.
 foreach ( $fixtures as $fixture ) {
 	delete_site_transient( cache_key( $fixture ) );
 }
 
+// Track every verdict the run caches, so cleanup removes exactly those even if
+// WordPress altered a comment's text on the way in.
+add_action(
+	'setted_site_transient',
+	static function ( $transient ) use ( &$cache_keys ): void {
+		if ( str_starts_with( (string) $transient, Triage\SPAM_CACHE_PREFIX ) ) {
+			$cache_keys[ (string) $transient ] = true;
+		}
+	}
+);
+
 // Runs from `finally` and, because WP_CLI::error() and fatal errors exit
 // without running `finally`, also on shutdown. The flag makes it run once.
 $cleaned = false;
-$cleanup = static function () use ( &$cleaned, &$comment_ids, &$post_id, $fixtures, $original_stats, $keep ): void {
+$cleanup = static function () use ( &$cleaned, &$comment_ids, &$post_ids, &$cache_keys, $original_stats, $keep ): void {
 	if ( $cleaned ) {
 		return;
 	}
 	$cleaned = true;
 
-	if ( null === $original_stats ) {
-		delete_site_option( Triage\CACHE_STATS_OPTION );
-	} else {
-		update_site_option( Triage\CACHE_STATS_OPTION, $original_stats );
+	// Put the network counters back to their values before the run.
+	foreach ( $original_stats as $counter => $value ) {
+		$option = Triage\CACHE_STATS_OPTION . '_' . $counter;
+		if ( 0 === $value ) {
+			delete_site_option( $option );
+		} else {
+			update_site_option( $option, $value );
+		}
 	}
 
 	if ( $keep ) {
-		\WP_CLI::log( 'Fixture post #' . $post_id . ' and its comments were retained.' );
+		\WP_CLI::log( 'Fixture posts #' . implode( ', #', $post_ids ) . ' and their comments were retained.' );
 		return;
 	}
 
-	foreach ( $fixtures as $fixture ) {
-		delete_site_transient( cache_key( $fixture ) );
+	foreach ( array_keys( $cache_keys ) as $transient ) {
+		delete_site_transient( $transient );
 	}
 	foreach ( $comment_ids as $comment_id ) {
 		wp_delete_comment( $comment_id, true );
 	}
-	if ( $post_id && ! is_wp_error( $post_id ) ) {
+	foreach ( $post_ids as $post_id ) {
 		wp_delete_post( (int) $post_id, true );
 	}
 	\WP_CLI::log( '' );
-	\WP_CLI::log( 'Cleaned up the fixture post, comments, cache entries, and counters. Pass "keep" to retain them.' );
+	\WP_CLI::log( 'Cleaned up the fixture posts, comments, cache entries, and counters. Pass "keep" to retain them.' );
 };
 register_shutdown_function( $cleanup );
 
 try {
-	$existing = get_page_by_path( SLUG, OBJECT, 'post' );
-	if ( $existing instanceof \WP_Post ) {
-		wp_delete_post( (int) $existing->ID, true );
+	// Remove fixture posts left behind by an interrupted earlier run.
+	for ( $round = 1; $round <= max( $repeat, 10 ); $round++ ) {
+		$existing = get_page_by_path( SLUG . '-' . $round, OBJECT, 'post' );
+		if ( $existing instanceof \WP_Post ) {
+			wp_delete_post( (int) $existing->ID, true );
+		}
 	}
 
-	$post_id = wp_insert_post(
-		[
-			'post_title'     => 'Caching strategies for WordPress multisite',
-			'post_name'      => SLUG,
-			'post_content'   => post_body(),
-			'post_status'    => 'publish',
-			'post_type'      => 'post',
-			'comment_status' => 'open',
-		],
-		true
-	);
+	// One post per round, all with the same content: rounds 2+ replay round 1's
+	// exact submissions on another post, which is what the spam cache is for.
+	for ( $round = 1; $round <= $repeat; $round++ ) {
+		$post_id = wp_insert_post(
+			[
+				'post_title'     => 'Caching strategies for WordPress multisite',
+				'post_name'      => SLUG . '-' . $round,
+				'post_content'   => post_body(),
+				'post_status'    => 'publish',
+				'post_type'      => 'post',
+				'comment_status' => 'open',
+			],
+			true
+		);
 
-	if ( is_wp_error( $post_id ) ) {
-		\WP_CLI::error( 'Could not create the fixture post: ' . $post_id->get_error_message() );
+		if ( is_wp_error( $post_id ) ) {
+			\WP_CLI::error( 'Could not create a fixture post: ' . $post_id->get_error_message() );
+		}
+		$post_ids[ $round ] = (int) $post_id;
 	}
-	\WP_CLI::log( 'Fixture post:         #' . $post_id );
+	\WP_CLI::log( 'Fixture posts:        #' . implode( ', #', $post_ids ) );
 
 	$submit_times = [];
 	$expected     = [];
@@ -273,18 +304,12 @@ try {
 
 	for ( $round = 1; $round <= $repeat; $round++ ) {
 		foreach ( $fixtures as $fixture ) {
-			// Vary the author identity per round so WordPress's duplicate-comment
-			// check does not reject repeats of identical fixture content.
-			$email = 1 === $round
-				? $fixture['email']
-				: str_replace( '@', '+r' . $round . '@', $fixture['email'] );
-
 			$start          = hrtime( true );
 			$comment_id     = wp_new_comment(
 				[
-					'comment_post_ID'      => $post_id,
+					'comment_post_ID'      => $post_ids[ $round ],
 					'comment_author'       => $fixture['author'],
-					'comment_author_email' => $email,
+					'comment_author_email' => $fixture['email'],
 					'comment_author_url'   => $fixture['url'],
 					'comment_content'      => $fixture['content'],
 					'comment_type'         => 'comment',
@@ -497,12 +522,11 @@ try {
 	\WP_CLI::log( sprintf( 'Hit a provider error at least once: %d', $retried ) );
 	\WP_CLI::log( sprintf( 'Still queued when the run ended:    %d', $still_queued ) );
 
-	$stats = get_site_option( Triage\CACHE_STATS_OPTION, [] );
-	$base  = is_array( $original_stats ) ? $original_stats : [];
+	$stats = Triage\cache_stats();
 	\WP_CLI::log( '' );
 	\WP_CLI::log( '--- Spam cache (' . ( apply_filters( 'jct_spam_cache', false ) ? 'enabled' : 'shadow mode' ) . ') ---' );
-	foreach ( [ 'lookups', 'hits', 'agreed' ] as $counter ) {
-		\WP_CLI::log( sprintf( '%-8s %d', $counter . ':', (int) ( $stats[ $counter ] ?? 0 ) - (int) ( $base[ $counter ] ?? 0 ) ) );
+	foreach ( $stats as $counter => $value ) {
+		\WP_CLI::log( sprintf( '%-8s %d', $counter . ':', $value - (int) ( $original_stats[ $counter ] ?? 0 ) ) );
 	}
 } finally {
 	$cleanup();

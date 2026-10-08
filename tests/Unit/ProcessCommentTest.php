@@ -81,9 +81,33 @@ beforeEach( function (): void {
 	Functions\when( 'delete_comment_meta' )->justReturn( true );
 	Functions\when( 'get_site_transient' )->justReturn( false );
 	Functions\when( 'set_site_transient' )->justReturn( true );
-	Functions\when( 'get_site_option' )->justReturn( [] );
-	Functions\when( 'update_site_option' )->justReturn( true );
+	Functions\when( 'get_site_option' )->alias(
+		static fn( string $option, $default = false ) => \JevCommentTriage\CACHE_SALT_OPTION === $option ? 'test-salt' : $default
+	);
 } );
+
+afterEach( function (): void {
+	unset( $GLOBALS['wpdb'] );
+} );
+
+/**
+ * Minimal $wpdb that records the SQL it is asked to run.
+ */
+final class RecordingWpdb {
+	public string $sitemeta = 'wp_sitemeta';
+	public string $options  = 'wp_options';
+	/** @var list<string> */
+	public array $queries = [];
+
+	public function prepare( string $query, mixed ...$args ): string {
+		return vsprintf( str_replace( '%s', "'%s'", $query ), $args );
+	}
+
+	public function query( string $sql ): int {
+		$this->queries[] = $sql;
+		return 1;
+	}
+}
 
 it( 'marks a spammy comment as spam', function (): void {
 	stub_base( '1' );
@@ -262,6 +286,17 @@ describe( 'batching', function (): void {
 		expect( $calls )->toBe( 5 );
 	} );
 
+	it( 'does not split a chunk on a configuration error such as 404', function (): void {
+		stub_base( '1' );
+		Functions\expect( 'AiProviderForJev\\evaluate' )
+			->once()
+			->andReturn( new WP_Error( 'jev_api_error', 'Not found.', [ 'status' => 404 ] ) );
+		Functions\expect( 'update_comment_meta' )->twice();
+		Functions\expect( 'wp_set_comment_status' )->never();
+
+		process_comments( [ make_comment( 'One.', 11 ), make_comment( 'Two.', 12 ) ] );
+	} );
+
 	it( 'does not split a chunk when the provider is down', function (): void {
 		stub_base( '1' );
 		Functions\expect( 'AiProviderForJev\\evaluate' )
@@ -317,18 +352,23 @@ describe( 'spam cache', function (): void {
 		Functions\expect( 'AiProviderForJev\\evaluate' )
 			->once()
 			->andReturn( [ 'answers' => answers_for( 'c0_', 'off_topic', 0.95, 0.99 ) ] );
-		$saved = [];
-		Functions\when( 'update_site_option' )->alias(
-			static function ( string $key, $value ) use ( &$saved ): bool {
-				$saved[ $key ] = $value;
-				return true;
-			}
-		);
+		$GLOBALS['wpdb'] = new RecordingWpdb();
+		Functions\when( 'is_multisite' )->justReturn( true );
+		Functions\when( 'get_current_network_id' )->justReturn( 1 );
+		Functions\when( 'add_network_option' )->justReturn( true );
+		Functions\when( 'wp_cache_delete' )->justReturn( true );
 		Functions\expect( 'wp_set_comment_status' )->once()->with( 10, 'spam' );
 
 		process_comment( make_comment( 'Buy pills now.' ) );
 
-		expect( $saved )->toBe( [ \JevCommentTriage\CACHE_STATS_OPTION => [ 'lookups' => 1, 'hits' => 1, 'agreed' => 1 ] ] );
+		// One atomic SQL increment per counter, no read-modify-write.
+		expect( $GLOBALS['wpdb']->queries )->toBe(
+			[
+				"UPDATE wp_sitemeta SET meta_value = meta_value + 1 WHERE site_id = 1 AND meta_key = 'jct_spam_cache_stats_lookups'",
+				"UPDATE wp_sitemeta SET meta_value = meta_value + 1 WHERE site_id = 1 AND meta_key = 'jct_spam_cache_stats_hits'",
+				"UPDATE wp_sitemeta SET meta_value = meta_value + 1 WHERE site_id = 1 AND meta_key = 'jct_spam_cache_stats_agreed'",
+			]
+		);
 	} );
 
 	it( 'skips Jev for known spam when enabled', function (): void {
