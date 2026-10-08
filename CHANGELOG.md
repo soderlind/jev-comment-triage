@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-09
+
+### Changed
+
+- The PHP namespace is now `Soderlind\Plugin\JevCommentTriage`. Hooks, filters,
+  options, and comment meta are unchanged; only code that called the plugin's
+  namespaced functions directly needs updating.
+- The entry point is now a composition root: the runtime code lives in focused
+  modules under `includes/` (`core.php`, `policy.php`, `intake.php`,
+  `scheduler.php`, `class-assessment.php`, `processor.php`, `spam-cache.php`,
+  and `admin.php`).
+- The Jev assessment logic is encapsulated in an `Assessment` class with a
+  single `assess()` entry point and an injectable provider adapter.
+
+### Added
+
+- WordPress Coding Standards setup: `phpcs.xml.dist` (short array syntax
+  allowed) plus `composer lint` and `composer lint:fix`.
+- `GLOSSARY.md`, defining the domain term "Assessment".
+
+### Fixed
+
+- The README now links the required AI Provider for Jev dependency.
+
 ## [2.1.0] - 2026-10-08
 
 ### Added
@@ -136,6 +160,7 @@ All notable changes to this project are documented here. The format is based on
 - Initial release: synchronous spam + toxicity triage on `pre_comment_approved`,
   scores stored as comment meta, and a "Jev" column on the admin Comments screen.
 
+[2.2.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.2.0
 [2.1.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.1.0
 [2.0.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.0.0
 [1.4.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.4.0

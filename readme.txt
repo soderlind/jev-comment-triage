@@ -3,7 +3,7 @@ Contributors: PerS
 Requires at least: 6.8
 Tested up to: 6.7
 Requires PHP: 8.3
-Stable tag: 2.1.0
+Stable tag: 2.2.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Tags: comments, moderation, spam, ai, anti-spam
@@ -64,6 +64,14 @@ No. It remembers WordPress's own decision and only downgrades to spam or hold. C
 The comment stays pending (never auto-published) and is retried on later drain ticks; after a few failed attempts it is left held for a human.
 
 == Changelog ==
+
+= 2.2.0 =
+* The PHP namespace is now `Soderlind\Plugin\JevCommentTriage`. Hooks, filters, options, and comment meta are unchanged; only code calling the plugin's namespaced functions directly is affected.
+* The entry point is now a composition root, with the runtime code split into focused modules under `includes/`.
+* The Jev assessment logic is encapsulated in an `Assessment` class with a single `assess()` entry point and an injectable provider adapter.
+* Added a WordPress Coding Standards setup: `phpcs.xml.dist` (short arrays allowed) plus `composer lint` and `composer lint:fix`.
+* Added `GLOSSARY.md`, defining the domain term "Assessment".
+* The README now links the required AI Provider for Jev dependency.
 
 = 2.1.0 =
 * Self-updates from GitHub releases, checked every 6 hours.

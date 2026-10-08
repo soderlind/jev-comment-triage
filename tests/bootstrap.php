@@ -47,13 +47,13 @@ namespace {
 		/** Minimal WP_Comment stand-in. */
 		class WP_Comment {
 			public int|string $comment_ID       = 0;
-			public string $comment_content       = '';
-			public string $comment_author        = '';
-			public string $comment_author_url    = '';
-			public string $comment_author_email  = '';
-			public string $comment_approved      = '1';
-			public int|string $comment_post_ID   = 0;
-			public int|string $user_id           = 0;
+			public string $comment_content      = '';
+			public string $comment_author       = '';
+			public string $comment_author_url   = '';
+			public string $comment_author_email = '';
+			public string $comment_approved     = '1';
+			public int|string $comment_post_ID  = 0;
+			public int|string $user_id          = 0;
 
 			/** @param array<string, mixed> $props */
 			public function __construct( array $props = [] ) {

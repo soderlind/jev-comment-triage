@@ -28,7 +28,7 @@ global $wpdb;
 $jct_like  = $wpdb->esc_like( '_site_transient_jct_spam_' ) . '%';
 $jct_tlike = $wpdb->esc_like( '_site_transient_timeout_jct_spam_' ) . '%';
 if ( is_multisite() ) {
-	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s OR meta_key LIKE %s", $jct_like, $jct_tlike ) );
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s OR meta_key LIKE %s", $jct_like, $jct_tlike ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall must remove all matching transient rows.
 } else {
-	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $jct_like, $jct_tlike ) );
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $jct_like, $jct_tlike ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall must remove all matching transient rows.
 }
