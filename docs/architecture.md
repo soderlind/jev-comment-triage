@@ -82,6 +82,65 @@ The plugin has one production entry point. Most modules preserve the existing
 namespaced function interfaces; assessment uses an injected class interface.
 There is no dependency container.
 
+## Runtime wiring and dependency direction
+
+WordPress loads `jev-comment-triage.php`, which loads Composer dependencies
+when available, initializes the GitHub updater, requires every module, and then
+registers hooks. Module files do not register hooks themselves. This keeps
+WordPress integration visible in one composition root and lets unit tests call
+module functions directly.
+
+The runtime dependency direction is:
+
+```mermaid
+flowchart TD
+    Root[jev-comment-triage.php]
+    Intake[includes/intake.php]
+    Scheduler[includes/scheduler.php]
+    Processor[includes/processor.php]
+    Assessment[includes/class-assessment.php]
+    Policy[includes/policy.php]
+    Cache[includes/spam-cache.php]
+    Core[includes/core.php]
+    Admin[includes/admin.php]
+    Provider[AI Provider for Jev]
+
+    Root --> Intake
+    Root --> Scheduler
+    Root --> Processor
+    Root --> Assessment
+    Root --> Policy
+    Root --> Cache
+    Root --> Core
+    Root --> Admin
+    Intake --> Core
+    Intake --> Scheduler
+    Scheduler --> Core
+    Scheduler --> Processor
+    Processor --> Core
+    Processor --> Assessment
+    Processor --> Policy
+    Processor --> Cache
+    Assessment --> Core
+    Core --> Provider
+    Processor --> Provider
+    Cache --> Provider
+```
+
+`processor.php` is the orchestration boundary: it creates the production
+`Assessment` with an adapter around `AiProviderForJev\evaluate()`. Tests can
+inject a different `Assessment`, and `Assessment` itself depends only on its
+callable adapter, root constants, and payload shaping from `core.php`. Provider
+configuration checks live in `core.php`; cache keys read the configured model
+in `spam-cache.php`.
+
+The root defines constants before requiring modules, and requires dependencies
+before their consumers. Because the function modules are not Composer
+autoloaded, changing this order or loading a module independently can leave
+constants, classes, or called functions unavailable. New runtime wiring and
+hook registration belong in the composition root; leaf modules should not
+require sibling files or register hooks as a side effect.
+
 ## Domain terms and persisted state
 
 ### Base decision
@@ -409,6 +468,7 @@ plugin:
 | Change scheduling or batching | `includes/scheduler.php`, `includes/intake.php`, `includes/processor.php`, `COMMENTS_PER_REQUEST` | admin notice, operational docs, batching tests |
 | Change data sent externally | `comment_payload()` in `includes/core.php` and `Assessment::assess()` | privacy-policy text, README/readme privacy sections, translation template |
 | Change admin presentation | `includes/admin.php` | translation template when strings change |
+| Change module wiring or WordPress hooks | `jev-comment-triage.php` | dependency diagram, affected module tests, activation/deactivation behavior |
 | Change updater or release artifact behavior | Updater bootstrap, `.distignore`, and `.github/workflows/` | Composer dependencies, installation docs, and archive-content checks |
 
 ## Current limitations and open questions
