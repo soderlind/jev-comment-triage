@@ -9,10 +9,14 @@
 	},
 	"require-dev": {
 		"brain/monkey": "^2.7",
-		"pestphp/pest": "^4.0"
+		"dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+		"pestphp/pest": "^4.0",
+		"wp-coding-standards/wpcs": "^3.0"
 	},
 	"scripts": {
-		"test": "pest"
+		"test": "pest",
+		"lint": "phpcs",
+		"lint:fix": "phpcbf"
 	},
 	"config": {
 		"sort-packages": true,
@@ -20,7 +24,8 @@
 			"php": "8.3.0"
 		},
 		"allow-plugins": {
-			"pestphp/pest-plugin": true
+			"pestphp/pest-plugin": true,
+			"dealerdirect/phpcodesniffer-composer-installer": true
 		}
 	}
 }

@@ -7,13 +7,31 @@
 
 declare( strict_types=1 );
 
-namespace JevCommentTriage;
+namespace Soderlind\Plugin\JevCommentTriage;
 
+/**
+ * Builds Jev requests and normalizes comment assessments.
+ */
 final class Assessment {
+	/**
+	 * Valid relevance choices.
+	 *
+	 * @var list<string>
+	 */
 	private const RELEVANCE_OPTIONS = [ 'on_topic', 'off_topic', 'unclear' ];
 
+	/**
+	 * Provider adapter.
+	 *
+	 * @var \Closure(array, array): array|\WP_Error
+	 */
 	private readonly \Closure $evaluate;
 
+	/**
+	 * Create an assessment service.
+	 *
+	 * @param callable $evaluate Provider adapter.
+	 */
 	public function __construct( callable $evaluate ) {
 		$this->evaluate = \Closure::fromCallable( $evaluate );
 	}
@@ -21,7 +39,7 @@ final class Assessment {
 	/**
 	 * Judge comments on one post and return one result for every caller key.
 	 *
-	 * @param array $postdata Post data (post_title, post_content).
+	 * @param array                                                       $postdata Post data (post_title, post_content).
 	 * @param array<int|string, array{commentdata:array, link_count:int}> $items Comments keyed by caller ID.
 	 * @return array<int|string, array<string, mixed>|\WP_Error>
 	 */
@@ -48,12 +66,12 @@ final class Assessment {
 	/**
 	 * Send one request and normalize its answers.
 	 *
-	 * @param array $postdata Post data.
+	 * @param array                                                       $postdata Post data.
 	 * @param array<int|string, array{commentdata:array, link_count:int}> $items Comments keyed by caller ID.
 	 * @return array<int|string, array<string, mixed>|\WP_Error>|\WP_Error
 	 */
 	private function request( array $postdata, array $items ): array|\WP_Error {
-		$state = [
+		$state     = [
 			'post' => [
 				'title'   => (string) ( $postdata['post_title'] ?? '' ),
 				'content' => (string) ( $postdata['post_content'] ?? '' ),
@@ -64,7 +82,8 @@ final class Assessment {
 		$index     = 0;
 
 		foreach ( $items as $key => $item ) {
-			$prefix           = 'c' . $index++ . '_';
+			$prefix = 'c' . $index . '_';
+			++$index;
 			$prefixes[ $key ] = $prefix;
 			$payload          = comment_payload( (array) $item['commentdata'], (int) $item['link_count'] );
 
@@ -130,6 +149,7 @@ final class Assessment {
 	 * Validate and normalize the three answers for one comment.
 	 *
 	 * @param array<string, mixed> $answers All answers in the response.
+	 * @param string               $prefix  Question identifier prefix.
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	private function parse_answers( array $answers, string $prefix ): array|\WP_Error {
@@ -176,10 +196,20 @@ final class Assessment {
 		];
 	}
 
+	/**
+	 * Whether a value is numeric and within the unit interval.
+	 *
+	 * @param mixed $value Value to check.
+	 */
 	private function is_unit_interval( mixed $value ): bool {
 		return is_numeric( $value ) && (float) $value >= 0.0 && (float) $value <= 1.0;
 	}
 
+	/**
+	 * Whether an error indicates that the request body should be split.
+	 *
+	 * @param \WP_Error $error Provider error.
+	 */
 	private function is_request_rejection( \WP_Error $error ): bool {
 		$data   = $error->get_error_data();
 		$status = is_array( $data ) ? (int) ( $data['status'] ?? 0 ) : 0;

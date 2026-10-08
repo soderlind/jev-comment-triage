@@ -9,7 +9,7 @@ remote model call off the comment-submission request and preserves WordPress's
 own moderation decision as an upper bound on what the plugin may publish.
 
 This document describes the current implementation in `jev-comment-triage.php`
-and `includes/Assessment.php`.
+and the focused modules under `includes/`.
 
 ## Scope
 
@@ -59,30 +59,28 @@ exclude author name, email, and URL, but it does not exclude the comment or post
 The updater separately checks this repository's public GitHub releases every
 six hours and installs the matching `jev-comment-triage.zip` asset.
 
-## Major components
+## Major modules
 
-The hook-driven orchestration is in `jev-comment-triage.php`; Jev request
-construction and response validation are behind the `Assessment` module in
-`includes/Assessment.php`.
+`jev-comment-triage.php` is the composition root: it defines shared constants,
+loads each module, initializes the updater, and registers every WordPress hook.
+Implementations live in focused files under `includes/`.
 
-| Component | Responsibility | Primary symbols | Depends on |
+| Module | Implementation | Responsibility | Primary interface |
 |---|---|---|---|
-| Provider guard | Determines whether triage can call the configured provider | `provider_ready()` | AI Provider for Jev |
-| Eligibility and deferral | Excludes unsupported or trusted comments, holds eligible comments, and captures WordPress's decision | `is_regular_comment()`, `is_trusted()`, `defer()` | WordPress comment pipeline |
-| Request-local handoff | Matches `defer()` with `enqueue()` before a comment ID exists | `base_registry()`, `fingerprint()` | In-process static memory |
-| Queue persistence | Marks comments for background processing and stores the base decision | `enqueue()` | WordPress comment meta, WP-Cron |
-| Scheduler and drain | Registers the minute interval, schedules work, selects a bounded batch, and limits overlap | `add_schedule()`, `ensure_scheduled()`, `drain()` | WP-Cron, transients |
-| Jev assessment | Sends the post once as state, asks relevance/spam/abuse questions per comment, validates each answer, and isolates request-body rejections behind one interface | `Assessment::assess()` | Injected `AiProviderForJev\evaluate()` adapter |
-| Decision policy | Applies risk-scaled thresholds to the three judgments | `thresholds()`, `decide()` | `jct_thresholds` filter |
-| Comment processor | Groups comments by post, chunks requests, applies the short-comment rule and spam cache, records retries, persists results, and changes status | `process_comments()`, `process_chunk()`, `apply_assessment()`, `record_failure()`, `finalize()` | Comment meta, WordPress status API |
-| Spam cache | Stores confident spam verdicts by a hash of the exact comment payload and counts would-be hits atomically | `spam_cache_key()`, `cache_salt()`, `record_cache_stats()`, `increment_counter()`, `cache_stats()` | Site transients, `jct_spam_cache_salt` and `jct_spam_cache_stats_*` site options |
-| Administration | Displays the result and explains privacy and cron requirements | `add_column()`, `render_column()`, `register_privacy_content()`, `cron_notice()` | WordPress admin hooks |
-| Updater | Checks GitHub Releases and installs the packaged plugin artifact | `GitHubUpdater::init()` | Composer autoloader, GitHub Releases |
-| Cleanup | Removes schedules, transients, and plugin-owned metadata on uninstall | `uninstall.php` | WordPress uninstall process |
+| Composition root | `jev-comment-triage.php` | Defines constants, loads modules, initializes updates, and registers hooks | WordPress hooks |
+| Shared helpers | `includes/core.php` | Provider readiness, payload shaping, counting, and eligibility helpers | Namespaced helper functions |
+| Intake | `includes/intake.php` | Holds eligible comments, captures WordPress's decision, and persists queue markers | `defer()`, `enqueue()` |
+| Scheduler | `includes/scheduler.php` | Registers the minute interval, schedules work, selects a bounded batch, and limits overlap | `add_schedule()`, `ensure_scheduled()`, `drain()` |
+| Assessment | `includes/class-assessment.php` | Constructs Jev requests, validates answers, and isolates request-body rejections | `Assessment::assess()` |
+| Decision policy | `includes/policy.php` | Applies risk-scaled thresholds to normalized judgments | `thresholds()`, `decide()` |
+| Processor | `includes/processor.php` | Batches comments, applies rules/cache, records retries, persists assessments, and changes status | `process_comments()` |
+| Spam cache | `includes/spam-cache.php` | Keys confident spam verdicts and atomically records network-wide counters | Cache helper functions |
+| Administration | `includes/admin.php` | Displays results and registers privacy and cron notices | WordPress admin callbacks |
+| Cleanup | `uninstall.php` | Removes schedules, transients, options, and plugin-owned metadata | WordPress uninstall entry point |
 
-The plugin has one production entry point, `jev-comment-triage.php`. It is
-procedural and hook-driven, with the assessment implementation concentrated in
-one injected class. There is no internal service container.
+The plugin has one production entry point. Most modules preserve the existing
+namespaced function interfaces; assessment uses an injected class interface.
+There is no dependency container.
 
 ## Domain terms and persisted state
 
@@ -402,15 +400,15 @@ plugin:
 
 | Change | Primary location | Also update |
 |---|---|---|
-| Change question wording or options | Private question schema in `includes/Assessment.php` | bump `SCHEMA_VERSION` (invalidates cached verdicts), update assessment tests, `column_text()`, benchmark fixtures, README/readme |
-| Change decision policy | `decide()` and `DEFAULT_THRESHOLDS` | logic/process tests, hook documentation; re-run `bin/benchmark.php` |
-| Change spam-cache behavior | `process_chunk()`, `spam_cache_key()`, `SPAM_CACHE_*` constants | cache tests, `uninstall.php`, privacy text |
-| Change comment eligibility | `defer()` and `enqueue()` | defer tests; keep both paths consistent |
-| Change queued metadata or lifecycle | Constants, `enqueue()`, `drain()`, `process_chunk()`, `apply_assessment()` | `uninstall.php`, process tests, this document |
-| Change retry behavior | `MAX_ATTEMPTS` and `record_failure()` | process tests and lifecycle documentation |
-| Change scheduling or batching | `add_schedule()`, `ensure_scheduled()`, `enqueue()`, `drain()`, `process_comments()`, `COMMENTS_PER_REQUEST` | admin notice, operational docs, batching tests |
-| Change data sent externally | `comment_payload()` and `Assessment::assess()` | privacy-policy text, README/readme privacy sections, translation template |
-| Change admin presentation | `add_column()`, `render_column()`, `column_text()` | translation template when strings change |
+| Change question wording or options | Private question schema in `includes/class-assessment.php` | bump `SCHEMA_VERSION` (invalidates cached verdicts), update assessment tests, `column_text()`, benchmark fixtures, README/readme |
+| Change decision policy | `includes/policy.php` and `DEFAULT_THRESHOLDS` | logic/process tests, hook documentation; re-run `bin/benchmark.php` |
+| Change spam-cache behavior | `includes/spam-cache.php` and cache use in `includes/processor.php` | cache tests, `uninstall.php`, privacy text |
+| Change comment eligibility | `includes/intake.php` and helpers in `includes/core.php` | defer tests; keep defer/enqueue paths consistent |
+| Change queued metadata or lifecycle | Constants, `includes/intake.php`, `includes/scheduler.php`, `includes/processor.php` | `uninstall.php`, process tests, this document |
+| Change retry behavior | `MAX_ATTEMPTS` and `record_failure()` in `includes/processor.php` | process tests and lifecycle documentation |
+| Change scheduling or batching | `includes/scheduler.php`, `includes/intake.php`, `includes/processor.php`, `COMMENTS_PER_REQUEST` | admin notice, operational docs, batching tests |
+| Change data sent externally | `comment_payload()` in `includes/core.php` and `Assessment::assess()` | privacy-policy text, README/readme privacy sections, translation template |
+| Change admin presentation | `includes/admin.php` | translation template when strings change |
 | Change updater or release artifact behavior | Updater bootstrap, `.distignore`, and `.github/workflows/` | Composer dependencies, installation docs, and archive-content checks |
 
 ## Current limitations and open questions

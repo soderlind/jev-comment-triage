@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<ruleset name="Jev Comment Triage">
+	<description>WordPress coding standards for Jev Comment Triage.</description>
+
+	<file>jev-comment-triage.php</file>
+	<file>uninstall.php</file>
+	<file>bin</file>
+	<file>includes</file>
+	<file>tests</file>
+
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/coverage/*</exclude-pattern>
+
+	<arg name="basepath" value="."/>
+	<arg name="colors"/>
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+
+	<config name="testVersion" value="8.3-"/>
+	<config name="minimum_supported_wp_version" value="6.8"/>
+
+	<rule ref="WordPress">
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+	</rule>
+
+	<!-- Pest requires tests/Pest.php, and bootstrap.php intentionally defines
+	     WordPress stubs across multiple namespaces. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.VariableComment">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.ClassComment">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.Commenting.DocComment.MissingShort">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.Files.OneObjectStructurePerFile">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Universal.Files.SeparateFunctionsFromOO">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Universal.Namespaces.DisallowCurlyBraceSyntax">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Universal.Namespaces.DisallowDeclarationWithoutName">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Universal.Namespaces.OneDeclarationPerFile">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.CodeAnalysis.AssignmentInTernaryCondition">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Universal.NamingConventions.NoReservedKeywordParameterNames">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.WP.GlobalVariablesOverride">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+</ruleset>

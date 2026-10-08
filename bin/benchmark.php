@@ -29,9 +29,9 @@
  * @package JevCommentTriage
  */
 
-namespace JevCommentTriage\Benchmark;
+namespace Soderlind\Plugin\JevCommentTriage\Benchmark;
 
-use JevCommentTriage as Triage;
+use Soderlind\Plugin\JevCommentTriage as Triage;
 
 if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 	exit( 1 );
@@ -52,7 +52,14 @@ const SLUG = 'jct-benchmark-fixture-post';
 function fixture( string $kind, string $route, string $author, string $content, string $url = '' ): array {
 	$email = strtolower( (string) preg_replace( '/[^a-z0-9]+/i', '.', $author ) ) . '@example.test';
 
-	return compact( 'kind', 'route', 'author', 'email', 'url', 'content' );
+	return [
+		'kind'    => $kind,
+		'route'   => $route,
+		'author'  => $author,
+		'email'   => $email,
+		'url'     => $url,
+		'content' => $content,
+	];
 }
 
 /**
@@ -135,12 +142,19 @@ function ms( float $ns ): string {
 /**
  * Summary statistics for a list of durations.
  *
+ * Calculate summary statistics for nanosecond durations.
+ *
  * @param float[] $values Durations in nanoseconds.
  * @return array{min:float,mean:float,p95:float,max:float}
  */
 function stats( array $values ): array {
 	if ( [] === $values ) {
-		return [ 'min' => 0.0, 'mean' => 0.0, 'p95' => 0.0, 'max' => 0.0 ];
+		return [
+			'min'  => 0.0,
+			'mean' => 0.0,
+			'p95'  => 0.0,
+			'max'  => 0.0,
+		];
 	}
 	sort( $values );
 	$count = count( $values );
@@ -154,7 +168,11 @@ function stats( array $values ): array {
 	];
 }
 
-/** @var array $args Positional arguments supplied by `wp eval-file`. */
+/**
+ * Positional arguments supplied by `wp eval-file`.
+ *
+ * @var array $args
+ */
 $flags         = isset( $args ) && is_array( $args ) ? $args : [];
 $keep          = in_array( 'keep', $flags, true );
 $relax_holding = ! in_array( 'hold-policy', $flags, true );
@@ -193,7 +211,7 @@ if ( $relax_holding && '1' === (string) $original_moderation ) {
 	add_filter( 'pre_option_comment_moderation', static fn() => '0' );
 	\WP_CLI::log( 'Moderation policy:    relaxed for this process only (comment_moderation 1 -> 0) so the publish path is reachable' );
 } else {
-	\WP_CLI::log( 'Moderation policy:    comment_moderation=' . var_export( $original_moderation, true ) );
+	\WP_CLI::log( 'Moderation policy:    comment_moderation=' . wp_json_encode( $original_moderation ) );
 }
 
 $fixtures    = fixtures();
@@ -257,7 +275,8 @@ register_shutdown_function( $cleanup );
 
 try {
 	// Remove fixture posts left behind by an interrupted earlier run.
-	for ( $round = 1; $round <= max( $repeat, 10 ); $round++ ) {
+	$cleanup_rounds = max( $repeat, 10 );
+	for ( $round = 1; $round <= $cleanup_rounds; $round++ ) {
 		$existing = get_page_by_path( SLUG . '-' . $round, OBJECT, 'post' );
 		if ( $existing instanceof \WP_Post ) {
 			wp_delete_post( (int) $existing->ID, true );
@@ -267,7 +286,7 @@ try {
 	// One post per round, all with the same content: rounds 2+ replay round 1's
 	// exact submissions on another post, which is what the spam cache is for.
 	for ( $round = 1; $round <= $repeat; $round++ ) {
-		$post_id = wp_insert_post(
+		$fixture_post_id = wp_insert_post(
 			[
 				'post_title'     => 'Caching strategies for WordPress multisite',
 				'post_name'      => SLUG . '-' . $round,
@@ -279,10 +298,10 @@ try {
 			true
 		);
 
-		if ( is_wp_error( $post_id ) ) {
-			\WP_CLI::error( 'Could not create a fixture post: ' . $post_id->get_error_message() );
+		if ( is_wp_error( $fixture_post_id ) ) {
+			\WP_CLI::error( 'Could not create a fixture post: ' . $fixture_post_id->get_error_message() );
 		}
-		$post_ids[ $round ] = (int) $post_id;
+		$post_ids[ $round ] = (int) $fixture_post_id;
 	}
 	\WP_CLI::log( 'Fixture posts:        #' . implode( ', #', $post_ids ) );
 
@@ -398,10 +417,11 @@ try {
 		}
 	};
 
-	$ours        = array_flip( $comment_ids );
-	$drain_start = hrtime( true );
-	$passes      = 0;
-	$stalled     = 0;
+	$ours          = array_flip( $comment_ids );
+	$comment_total = count( $comment_ids );
+	$drain_start   = hrtime( true );
+	$passes        = 0;
+	$stalled       = 0;
 
 	// drain() handles a bounded batch per tick, so keep ticking until our own
 	// comments are all triaged — exactly what repeated WP-Cron runs would do.
@@ -423,7 +443,7 @@ try {
 			\WP_CLI::log( sprintf( 'Pass %d made no progress (provider throttling?); backing off %ds...', $passes, $stalled * 5 ) );
 			sleep( $stalled * 5 );
 		}
-	} while ( $after < count( $comment_ids ) && $stalled < 4 && $passes < 50 );
+	} while ( $after < $comment_total && $stalled < 4 && $passes < 50 );
 
 	$drain_total = (float) ( hrtime( true ) - $drain_start );
 	$foreign     = count( $triaged ) - count( array_intersect_key( $triaged, $ours ) );
@@ -433,7 +453,11 @@ try {
 
 	$reset_runtime_cache();
 
-	$labels       = [ '1' => 'approved', '0' => 'held', 'spam' => 'spam' ];
+	$labels       = [
+		'1'    => 'approved',
+		'0'    => 'held',
+		'spam' => 'spam',
+	];
 	$rows         = [];
 	$matrix       = [];
 	$matched      = 0;
