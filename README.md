@@ -16,6 +16,15 @@ commenting stays fast even though moderation calls a remote API.
 - The **AI Provider for Jev** plugin, active and configured with an API key
   (declared as a dependency via `Requires Plugins`).
 
+## Installation
+
+1. Download the latest
+   [`jev-comment-triage.zip`](https://github.com/soderlind/jev-comment-triage/releases/latest/download/jev-comment-triage.zip).
+2. In WordPress, go to **Plugins > Add New Plugin > Upload Plugin**, select the
+   downloaded ZIP, and choose **Install Now**.
+3. Activate **Jev Comment Triage**. WordPress will notify you when future
+   releases are available.
+
 ## How it works
 
 1. **On submit** (`pre_comment_approved`) — untrusted comments are held as
