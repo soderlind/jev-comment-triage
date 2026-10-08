@@ -2,8 +2,10 @@
 
 Auto-moderate WordPress comments with [TypeSafe](https://docs.typesafe.ai/introduction)'s
 **Jev** model, via the [AI Provider for Jev](https://github.com/soderlind/ai-provider-for-jev)
-plugin. Each comment is scored for **spam**, **scam/phishing**, and **toxicity**,
-then routed — approved, flagged as spam, or held for review.
+plugin. For every comment Jev answers three independent questions in the
+context of its post: how it relates to the post, whether it is spam, and
+whether it is abusive. Plain PHP turns those answers into a decision, and only
+confident answers lead to an automatic action.
 
 The Jev call runs **asynchronously**, off the comment-submit request, so
 commenting stays fast even though moderation calls a remote API.
@@ -24,92 +26,145 @@ commenting stays fast even though moderation calls a remote API.
 2. **On store** (`comment_post`) — the comment is tagged with a pending marker,
    a per-minute drain event is ensured, and a throttled immediate nudge
    (`spawn_cron`) is fired.
-3. **Background drain** (`jct_drain`, every minute) — a bounded batch of pending,
-   un-triaged comments is assessed in one Jev call each and routed, **never
-   publishing past the site's own moderation policy**:
-   - spam/scam ≥ threshold → **spam**
-   - borderline or toxic → **held** for review
-   - clean → WordPress's remembered decision (**approved** only if the site
-     would have approved it anyway; otherwise **held**)
-4. **Self-healing** — on an API error a comment keeps its pending marker and is
-   retried on the next tick; after 3 attempts it is left held for a human.
-   Comments are never publicly visible before triage, and a lock prevents
-   concurrent drains from double-processing.
+3. **Background drain** (`jct_drain`, every minute) — a bounded batch of
+   pending, un-triaged comments is grouped by post. Each post's content is sent
+   once, with up to 20 comments per Jev request, and every comment is routed
+   on its own answers (see [Decision logic](#decision-logic)), **never
+   publishing past the site's own moderation policy**.
+4. **Self-healing** — a comment whose answer is malformed keeps its pending
+   marker and is retried on the next tick; after 3 attempts it is left held for
+   a human. If Jev rejects a whole request (HTTP 4xx, for example because one
+   comment is too large), the request is split in half and retried until the
+   offending comment is isolated, so the others are still judged. Outages,
+   timeouts, and rate limits leave the whole chunk pending without splitting. Comments are never publicly visible before triage, and a
+   lock prevents concurrent drains from double-processing.
 
-Scores are stored as the `_jev_triage` comment meta and shown in a **Jev** column
-on the admin Comments screen.
+The answers and decision are stored as the `_jev_triage` comment meta and shown
+in a **Jev** column on the admin Comments screen.
+
+## What Jev is asked
+
+| Question | Type | Why this type |
+| -------- | ---- | ------------- |
+| How does the comment relate to the post? | Choice: `on_topic`, `off_topic`, `unclear` | The options are mutually exclusive; its `confidence` says whether to trust the pick. |
+| Is the comment spam (promotion, scam, phishing, link-dropping)? | Noul (probability of yes) | Spam can mention the post, so it is not an alternative to on-topic. |
+| Does the comment contain insults, harassment, threats, or hate? | Noul | Abuse can be on-topic too. |
+
+Asking these separately matters. An abusive comment about the post is clearly
+on-topic *and* clearly abusive; a single "pick one category" question can only
+express that as a split, uncertain answer, and puts threats in the spam folder.
 
 ## Decision logic
 
-The combined spam signal is `max(is_spam, is_scam)`. A comment is marked spam
-when that exceeds the `spam` threshold, when `is_scam` alone exceeds the `scam`
-threshold, or when it is link-heavy (≥ `comment_max_links`) with any real spam
-signal. Borderline spam or toxic content is held rather than deleted, keeping
-false positives out of the spam bucket.
+Thresholds rise with the cost of a wrong action:
+
+| Order | Condition (defaults) | Result |
+| ----- | -------------------- | ------ |
+| 1 | spam ≥ `0.90` | **spam** |
+| 2 | abusive ≥ `0.50` | **held** for a person, not hidden as spam |
+| 3 | on-topic with confidence ≥ `0.80`, and spam and abusive both < `0.20` | WordPress's remembered decision: **approved** only if the site would have approved it anyway |
+| 4 | anything else (off-topic, unclear, low confidence, borderline signals) | **held** |
+
+## Fewer calls when the answer is known
+
+- **Spam-verdict cache.** When Jev is at least `0.98` sure a comment is spam, a
+  hash of everything that verdict can rest on — the raw text including link
+  markup, the author's website host, and email domain, plus model and question
+  version — is cached network-wide for 7 days, so the same spam blasted across
+  posts or subsites can be recognized. Because link targets and author signals
+  are part of the key, a generic "Great post!" sent with a spam link cannot
+  mark that phrase as spam for everyone else. Only spam verdicts are cached: relevance depends on the
+  post, and borderline answers can vary between runs. The cache runs in
+  **shadow mode** by default — Jev is still asked, and the `jct_spam_cache_stats`
+  site option counts `lookups`, `hits`, and how often Jev `agreed`. Turn it on
+  with the `jct_spam_cache` filter once those numbers justify it.
+- **Optional short-comment rule.** With `jct_min_words` set, link-free comments
+  shorter than that are held without calling Jev. It is off by default because
+  whether "Thanks!" should be published is a site policy.
+- **Your own word lists.** WordPress's *Disallowed Comment Keys* (and Akismet,
+  if active) already mark comments as spam or trash before triage, and those
+  comments never reach Jev. Prefer them to custom regular expressions.
 
 ## Hooks
 
 | Hook | Type | Purpose |
 | ---- | ---- | ------- |
-| `jct_thresholds` | filter | Tune decision thresholds (`spam` 0.75, `scam` 0.65, `hold` 0.45, `toxicity_hold` 1.5, `link_assist` 0.50). |
+| `jct_thresholds` | filter | Decision thresholds: `spam` (0.90), `abusive` (0.50), `relevance` (0.80), `clean` (0.20). Returned values are merged over the defaults and clamped to 0–1. Receives the assessment as its second argument. |
 | `jct_batch_size` | filter | Comments processed per drain tick (default 20). |
+| `jct_comments_per_request` | filter | Comments on the same post sent in one Jev request (default 20, i.e. 60 questions). |
+| `jct_spam_cache` | filter | Return `true` to skip Jev for cached spam texts (default `false`, shadow mode). |
+| `jct_min_words` | filter | Hold link-free comments with fewer words without calling Jev (default `0`, off). |
 | `jct_include_author_details` | filter | Whether to send the author name, URL, and email to the AI service (default `true`). Return `false` for stricter privacy. |
 | `jct_triaged` | action | Fires after a decision: `do_action( 'jct_triaged', $comment_id, $assessment, $decision )`. |
 
 ```php
-// Be stricter, process more per tick, and stop sending author PII.
-add_filter( 'jct_thresholds', fn( $t ) => [ ...$t, 'spam' => 0.65 ] );
-add_filter( 'jct_batch_size', fn() => 50 );
+// Require a stronger on-topic signal, act on cached spam, stop sending author PII.
+add_filter( 'jct_thresholds', fn( $t ) => [ 'relevance' => 0.9 ] + $t );
+add_filter( 'jct_spam_cache', '__return_true' );
 add_filter( 'jct_include_author_details', '__return_false' );
 ```
 
 ## Privacy
 
-Comment text (and, unless disabled via `jct_include_author_details`, the author
-name, email, and URL) is sent to the TypeSafe (Jev) service for assessment. The
-plugin registers a suggested-privacy-policy snippet under **Settings → Privacy**.
-
-## Accuracy
-
-Against a hand-labelled set of tricky cases (polite affiliate spam, phishing,
-crypto, dating bait, a link-farm, plus genuine comments including one with a
-legitimate link), the tuned logic scored **10/10** with no false positives — the
-genuine comment carrying a link scored 0.34 spam and was correctly passed.
+Comment text and the related post title and content (and, unless disabled via
+`jct_include_author_details`, the author name, email, and URL) are sent to the
+TypeSafe (Jev) service. The spam cache stores only a hash of the comment text
+and two probabilities. The plugin registers a suggested privacy-policy snippet
+under **Settings → Privacy**.
 
 ## Benchmark
 
-100 comments on a Local multisite subsite, `jev-latest`, sequential.
+Reproducible via the tracked harness, which drives the real production path
+(`wp_new_comment()` → `defer()` → `enqueue()` → `drain()` → `process_comments()`):
 
-**On-request insert latency** (what the commenter waits for):
+```sh
+wp eval-file wp-content/plugins/jev-comment-triage/bin/benchmark.php repeat=3 --url=https://example.com
+```
 
-| min | mean | p95 | max |
-| ---- | ---- | ---- | ---- |
-| 1.28 ms | **2.38 ms** | 3.94 ms | 9.06 ms |
+It creates a fixture post, submits 20 labelled comments per round, drains the
+queue against the live Jev API, compares each comment's route with the route it
+should get, and removes everything it created. Flags: `keep` retains the
+fixtures, `hold-policy` keeps the site's `comment_moderation` policy, and
+`spam-cache` turns the cache on. To reach the publish path it relaxes
+`comment_moderation` for its own process only, so the stored setting and other
+visitors are never affected, and it cleans up even when it exits early.
 
-**Background drain** (off the request path):
+The fixtures include the hard cases: an abusive comment about the post, a
+threat, promotion and phishing that mention the post, a prompt-injection
+attempt, a legitimate documentation link, a Norwegian comment, and civil
+criticism.
 
-| processed | passes | wall time | throughput | mean/comment |
-| --------- | ------ | --------- | ---------- | ------------ |
-| 100 | 1 | 70.7 s | 1.41 comments/s | 707 ms |
+Run below: 60 comments (3 × 20 fixtures), `jev-latest`, default thresholds, on a
+Local multisite subsite.
 
-### Async vs. the original synchronous version
+| Metric | Result |
+| ------ | ------ |
+| Submission latency (what the commenter waits for, no API call) | mean **4.6 ms**, p95 7.4 ms |
+| Jev requests | 3, each with 20 comments (60 questions); mean **338 ms**, max 379 ms |
+| Drain throughput | 60 comments in 1.21 s — **49.5 comments/s**, 17 ms of API time per comment |
+| Input tokens | 514 per comment |
+| Routed as expected | **60 / 60** |
+| Published but should not be | **0** |
+| Good comments sent to spam | 0 |
 
-| Metric | Sync | Async (this version) | Change |
-| ------ | ---- | -------------------- | ------ |
-| Commenter-facing latency (mean) | 1237 ms | **2.4 ms** | ~520× faster |
-| Commenter-facing p95 | 1608 ms | **3.9 ms** | ~410× faster |
-| Where the Jev call runs | on submit (blocking) | background drain | — |
-| Throughput | 0.77/s | 1.41/s | +83% |
+For comparison, the previous design (one Choice question, one request per
+comment) drained 3.25 comments/s on the same site and held abusive or
+threatening comments only when its confidence happened to fall below the
+threshold.
 
-Moving the Jev call off the request cut comment submission from ~1.2 s to ~2 ms
-(~500×). The drain is also faster per comment than the old sync path (707 ms vs
-1237 ms) because it does only the API call and status update, not the full
-comment-insert pipeline — so the entire 100-comment backlog cleared in a single
-drain pass.
+In shadow mode the cache would have answered 8 repeated spam comments in rounds
+2 and 3, and Jev agreed with all 8. With `spam-cache` enabled, those 8 skipped
+Jev (156 questions instead of 180) and routing stayed 60 / 60.
 
 > **WP-Cron note:** the drain relies on WP-Cron. On low-traffic sites, add a
 > real system cron calling `wp-cron.php` (and set `DISABLE_WP_CRON`) so the
 > backlog is processed promptly.
+
+## Architecture
+
+See [Architecture](docs/architecture.md) for component responsibilities,
+comment lifecycle states, execution flows, invariants, boundaries, and change
+locations.
 
 ## License
 

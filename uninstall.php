@@ -17,3 +17,14 @@ foreach ( [ '_jev_triage', '_jct_pending', '_jct_attempts', '_jct_base' ] as $me
 
 delete_transient( 'jct_drain_soon' );
 delete_transient( 'jct_draining' );
+delete_site_option( 'jct_spam_cache_stats' );
+
+// Cached spam verdicts expire on their own; remove them now as well.
+global $wpdb;
+$jct_like  = $wpdb->esc_like( '_site_transient_jct_spam_' ) . '%';
+$jct_tlike = $wpdb->esc_like( '_site_transient_timeout_jct_spam_' ) . '%';
+if ( is_multisite() ) {
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s OR meta_key LIKE %s", $jct_like, $jct_tlike ) );
+} else {
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $jct_like, $jct_tlike ) );
+}

@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [2.0.0] - 2026-10-08
+
+### Added
+
+- Post-relevance judgment: each comment is compared with its post's title and
+  content and classified as on-topic, off-topic, or unclear.
+- Comments on the same post are judged in one Jev request (up to 20, set with
+  `jct_comments_per_request`), so the post is sent once. A malformed answer
+  retries only the affected comment, and a rejected request (HTTP 4xx) is split
+  until the offending comment is isolated.
+- Spam-verdict cache keyed on the raw text (including link markup), author
+  website host, email domain, model, and question version, shared across the
+  network. It runs in shadow mode (counting would-be hits in
+  `jct_spam_cache_stats`) until enabled with the `jct_spam_cache` filter.
+- Optional `jct_min_words` rule that holds very short, link-free comments
+  without calling Jev (off by default).
+- `bin/benchmark.php`, a WP-CLI end-to-end benchmark and routing harness with
+  hard-case fixtures, plus `docs/architecture.md`.
+- WordPress.org `readme.txt`.
+- Translation tooling: `i18n-map.json`, `languages/`, npm i18n scripts, and a
+  generated `.pot`.
+
+### Changed
+
+- Each comment now gets three independent judgments: relevance (Choice), spam
+  (Noul), and abuse (Noul), replacing the separate spam, scam, and toxicity
+  questions. Abusive comments are held for review rather than marked as spam.
+- **Breaking:** Publishing requires a confident on-topic answer with low spam
+  and abuse signals; thresholds rise with the cost of a wrong action and are
+  adjustable through `jct_thresholds` (`spam`, `abusive`, `relevance`, `clean`).
+  Callbacks that set the old `spam` key keep working; other old keys are
+  ignored.
+- Removed the link-count spam heuristic; the link count is passed to Jev as
+  context instead.
+- The Comments screen shows relevance, confidence, spam, abuse, and the
+  decision, and labels assessments stored by earlier versions.
+- Uninstall also removes the spam cache and its counters.
+
 ## [1.4.0] - 2026-09-18
 
 ### Added
@@ -79,6 +119,7 @@ All notable changes to this project are documented here. The format is based on
 - Initial release: synchronous spam + toxicity triage on `pre_comment_approved`,
   scores stored as comment meta, and a "Jev" column on the admin Comments screen.
 
+[2.0.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.0.0
 [1.4.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.4.0
 [1.3.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.3.0
 [1.2.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.2.0

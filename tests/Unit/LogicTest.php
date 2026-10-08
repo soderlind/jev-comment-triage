@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the pure decision logic (count_links, decide, is_trusted).
+ * Tests for the pure decision logic (count_links, decide, thresholds, is_trusted).
  *
  * @package JevCommentTriage
  */
@@ -12,39 +12,93 @@ use Brain\Monkey\Functions;
 use function JevCommentTriage\count_links;
 use function JevCommentTriage\decide;
 use function JevCommentTriage\is_trusted;
+use function JevCommentTriage\spam_cache_key;
+use function JevCommentTriage\thresholds;
+use function JevCommentTriage\word_count;
+
+/**
+ * Build an assessment in the stored shape.
+ */
+function assessment( string $relevance, float $confidence, float $spam = 0.02, float $abusive = 0.02 ): array {
+	return [
+		'version'   => 2,
+		'source'    => 'jev',
+		'relevance' => [ 'choice' => $relevance, 'confidence' => $confidence, 'probabilities' => [] ],
+		'spam'      => $spam,
+		'abusive'   => $abusive,
+	];
+}
 
 it( 'counts http, https, and www links', function (): void {
 	expect( count_links( 'see http://a.com and https://b.com and www.c.com' ) )->toBe( 3 );
 	expect( count_links( 'no links here at all' ) )->toBe( 0 );
 } );
 
+it( 'counts words across any whitespace', function (): void {
+	expect( word_count( "  ok \n thanks  " ) )->toBe( 2 );
+	expect( word_count( '' ) )->toBe( 0 );
+} );
+
+it( 'keys the spam cache on normalized text', function (): void {
+	expect( spam_cache_key( "BUY  cheap\nPills" ) )->toBe( spam_cache_key( 'buy cheap pills' ) );
+	expect( spam_cache_key( 'buy cheap pills' ) )->not->toBe( spam_cache_key( 'buy cheap watches' ) );
+} );
+
+it( 'keys the spam cache on link targets and author signals, not just visible text', function (): void {
+	$plain = spam_cache_key( 'Great post! thanks', '', 'reader@example.test' );
+
+	expect( spam_cache_key( 'Great post! <a href="http://casino.example">thanks</a>', '', 'reader@example.test' ) )->not->toBe( $plain );
+	expect( spam_cache_key( 'Great post! thanks', 'http://casino.example/win', 'reader@example.test' ) )->not->toBe( $plain );
+	expect( spam_cache_key( 'Great post! thanks', '', 'bot@casino.example' ) )->not->toBe( $plain );
+	expect( spam_cache_key( 'Great post! thanks', '', 'other.reader@EXAMPLE.test' ) )->toBe( $plain );
+} );
+
 describe( 'decide', function (): void {
-	beforeEach( function (): void {
-		Functions\when( 'get_option' )->justReturn( 2 ); // comment_max_links
+	it( 'marks a strong spam signal as spam, even when on-topic', function (): void {
+		expect( decide( assessment( 'on_topic', 0.99, 0.93 ), '1' ) )->toBe( 'spam' );
 	} );
 
-	it( 'flags high spam probability as spam', function (): void {
-		expect( decide( [ 'is_spam' => 0.90, 'is_scam' => 0.10, 'toxicity' => 0.0 ], 0, '1' ) )->toBe( 'spam' );
+	it( 'holds an abusive comment instead of marking it spam', function (): void {
+		expect( decide( assessment( 'on_topic', 0.99, 0.04, 0.98 ), '1' ) )->toBe( '0' );
 	} );
 
-	it( 'flags high scam probability as spam', function (): void {
-		expect( decide( [ 'is_spam' => 0.20, 'is_scam' => 0.70, 'toxicity' => 0.0 ], 0, '1' ) )->toBe( 'spam' );
+	it( 'keeps WordPress approval for a confident, clean on-topic comment', function (): void {
+		expect( decide( assessment( 'on_topic', 0.85 ), '1' ) )->toBe( '1' );
 	} );
 
-	it( 'flags link-heavy comments with a spam signal as spam', function (): void {
-		expect( decide( [ 'is_spam' => 0.60, 'is_scam' => 0.10, 'toxicity' => 0.0 ], 2, '1' ) )->toBe( 'spam' );
+	it( 'respects WordPress moderation for a confident, clean on-topic comment', function (): void {
+		expect( decide( assessment( 'on_topic', 0.85 ), '0' ) )->toBe( '0' );
 	} );
 
-	it( 'holds borderline spam', function (): void {
-		expect( decide( [ 'is_spam' => 0.50, 'is_scam' => 0.10, 'toxicity' => 0.0 ], 0, '1' ) )->toBe( '0' );
+	it( 'holds an on-topic comment below the relevance threshold', function (): void {
+		expect( decide( assessment( 'on_topic', 0.79 ), '1' ) )->toBe( '0' );
 	} );
 
-	it( 'holds toxic comments', function (): void {
-		expect( decide( [ 'is_spam' => 0.10, 'is_scam' => 0.10, 'toxicity' => 1.7 ], 0, '1' ) )->toBe( '0' );
+	it( 'holds an on-topic comment with a borderline spam signal', function (): void {
+		expect( decide( assessment( 'on_topic', 0.99, 0.30 ), '1' ) )->toBe( '0' );
 	} );
 
-	it( 'passes clean comments through', function (): void {
-		expect( decide( [ 'is_spam' => 0.05, 'is_scam' => 0.02, 'toxicity' => 0.0 ], 0, '1' ) )->toBe( '1' );
+	it( 'holds off-topic and unclear comments', function (): void {
+		expect( decide( assessment( 'off_topic', 1.0 ), '1' ) )->toBe( '0' );
+		expect( decide( assessment( 'unclear', 1.0 ), '1' ) )->toBe( '0' );
+	} );
+
+	it( 'holds an assessment without judgments', function (): void {
+		expect( decide( [ 'version' => 2, 'source' => 'rule' ], '1' ) )->toBe( '0' );
+	} );
+} );
+
+describe( 'thresholds', function (): void {
+	it( 'merges filtered values over the defaults and clamps them', function (): void {
+		Functions\when( 'apply_filters' )->justReturn( [ 'spam' => 0.75, 'abusive' => 'high', 'relevance' => 2 ] );
+
+		expect( thresholds() )->toBe( [ 'spam' => 0.75, 'abusive' => 0.50, 'relevance' => 1.0, 'clean' => 0.20 ] );
+	} );
+
+	it( 'falls back to the defaults when the filter returns a non-array', function (): void {
+		Functions\when( 'apply_filters' )->justReturn( null );
+
+		expect( thresholds() )->toBe( \JevCommentTriage\DEFAULT_THRESHOLDS );
 	} );
 } );
 

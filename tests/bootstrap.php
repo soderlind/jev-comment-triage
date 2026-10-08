@@ -20,10 +20,18 @@ namespace {
 			/** @var array<string, list<string>> */
 			public array $errors = [];
 
-			public function __construct( string $code = '', string $message = '' ) {
+			/** @var mixed */
+			public mixed $data = null;
+
+			public function __construct( string $code = '', string $message = '', mixed $data = null ) {
 				if ( '' !== $code ) {
 					$this->errors[ $code ][] = $message;
 				}
+				$this->data = $data;
+			}
+
+			public function get_error_data(): mixed {
+				return $this->data;
 			}
 
 			public function get_error_message(): string {
@@ -44,6 +52,7 @@ namespace {
 			public string $comment_author_url    = '';
 			public string $comment_author_email  = '';
 			public string $comment_approved      = '1';
+			public int|string $comment_post_ID   = 0;
 			public int|string $user_id           = 0;
 
 			/** @param array<string, mixed> $props */
@@ -91,6 +100,10 @@ namespace AiProviderForJev\Settings {
 
 			public function is_configured(): bool {
 				return true;
+			}
+
+			public function get_model(): string {
+				return 'jev-test';
 			}
 		}
 	}
