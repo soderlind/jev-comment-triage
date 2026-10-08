@@ -9,13 +9,16 @@
 	},
 	"require-dev": {
 		"brain/monkey": "^2.7",
-		"pestphp/pest": "^5.0"
+		"pestphp/pest": "^4.0"
 	},
 	"scripts": {
 		"test": "pest"
 	},
 	"config": {
 		"sort-packages": true,
+		"platform": {
+			"php": "8.3.0"
+		},
 		"allow-plugins": {
 			"pestphp/pest-plugin": true
 		}
