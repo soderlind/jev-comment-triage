@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Jev Comment Triage 1.4.0\n"
+"Project-Id-Version: Jev Comment Triage 2.0.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/jev-comment-triage\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-18T22:15:15+00:00\n"
+"POT-Creation-Date: 2026-10-08T19:58:46+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: jev-comment-triage\n"
@@ -21,21 +21,65 @@ msgstr ""
 
 #. Description of the plugin
 #: jev-comment-triage.php
-msgid "Uses AI Provider for Jev to auto-moderate comments asynchronously — a batched background job triages pending comments (spam/scam/toxicity) while respecting WordPress's own moderation, keeping comment submission fast."
+msgid "Uses AI Provider for Jev to judge pending comments for relevance to their post, spam, and abuse, and acts only on confident answers."
 msgstr ""
 
-#: jev-comment-triage.php:190
+#: jev-comment-triage.php:401
 msgid "Every minute (Jev triage)"
 msgstr ""
 
-#: jev-comment-triage.php:431
+#: jev-comment-triage.php:883
 msgid "Jev"
 msgstr ""
 
-#: jev-comment-triage.php:471
-msgid "When you submit a comment, its text — and, unless the site disables it, your name, email address, and website — is sent to the TypeSafe (Jev) service to check it for spam, scams, and abuse."
+#: jev-comment-triage.php:916
+msgid "spam"
 msgstr ""
 
-#: jev-comment-triage.php:491
+#: jev-comment-triage.php:917
+msgid "approved"
+msgstr ""
+
+#: jev-comment-triage.php:918
+msgid "held"
+msgstr ""
+
+#: jev-comment-triage.php:925
+msgid "Earlier version"
+msgstr ""
+
+#: jev-comment-triage.php:931
+msgid "Too short to judge"
+msgstr ""
+
+#. translators: %s: spam probability, e.g. 0.99.
+#: jev-comment-triage.php:937
+#, php-format
+msgid "Known spam text (cached) · spam %s"
+msgstr ""
+
+#: jev-comment-triage.php:943
+msgid "on-topic"
+msgstr ""
+
+#: jev-comment-triage.php:944
+msgid "off-topic"
+msgstr ""
+
+#: jev-comment-triage.php:945
+msgid "unclear"
+msgstr ""
+
+#. translators: 1: relevance label, 2: relevance confidence, 3: spam probability, 4: abuse probability.
+#: jev-comment-triage.php:951
+#, php-format
+msgid "%1$s %2$s · spam %3$s · abuse %4$s"
+msgstr ""
+
+#: jev-comment-triage.php:967
+msgid "When you submit a comment, its text and the related post content — and, unless the site disables it, your name, email address, and website — are sent to the TypeSafe (Jev) service to check the comment for relevance, spam, and abuse before it is published."
+msgstr ""
+
+#: jev-comment-triage.php:987
 msgid "Jev Comment Triage: WP-Cron is disabled (DISABLE_WP_CRON). Make sure a system cron runs wp-cron.php, or deferred comments will not be triaged."
 msgstr ""
