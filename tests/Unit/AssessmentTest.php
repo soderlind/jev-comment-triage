@@ -129,13 +129,13 @@ it(
 
 it(
 	'isolates a comment whose request is rejected',
-	function (): void {
+	function ( int $status ): void {
 		$calls    = 0;
-		$provider = static function ( array $state, array $questions ) use ( &$calls ): array|WP_Error {
+		$provider = static function ( array $state, array $questions ) use ( &$calls, $status ): array|WP_Error {
 			++$calls;
 			$contents = array_map( static fn( array $question ): string => $question['instructions']['comment']['content'], $questions );
 			if ( in_array( 'Too large.', $contents, true ) ) {
-				return new WP_Error( 'jev_api_error', 'Rejected.', [ 'status' => 422 ] );
+				return new WP_Error( 'jev_api_error', 'Rejected.', [ 'status' => $status ] );
 			}
 
 			$answers = [];
@@ -161,7 +161,7 @@ it(
 		expect( $results[13] )->toBeInstanceOf( WP_Error::class );
 		expect( $results[14] )->toBeArray();
 	}
-);
+)->with( [ 413, 422 ] );
 
 it(
 	'does not split failures unrelated to the request body',
