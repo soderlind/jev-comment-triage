@@ -13,7 +13,7 @@ commenting stays fast even though moderation calls a remote API.
 ## Requirements
 
 - WordPress 6.8+, PHP 8.3+
-- The **AI Provider for Jev** plugin, active and configured with an API key
+- The **[AI Provider for Jev](https://github.com/soderlind/ai-provider-for-jev)** plugin, active and configured with an API key
   (declared as a dependency via `Requires Plugins`).
 
 ## Installation
