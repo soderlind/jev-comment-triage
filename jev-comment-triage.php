@@ -4,7 +4,7 @@
  * Description: Uses AI Provider for Jev to judge pending comments for relevance to their post, spam, and abuse, and acts only on confident answers.
  * Requires Plugins: ai-provider-for-jev
  * Requires PHP: 8.3
- * Version: 2.0.0
+ * Version: 2.1.0
  * License: GPL-2.0-or-later
  * Text Domain: jev-comment-triage
  * Domain Path: /languages
@@ -16,6 +16,22 @@ namespace JevCommentTriage;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
+}
+
+$autoload = __DIR__ . '/vendor/autoload.php';
+if ( is_readable( $autoload ) ) {
+	require_once $autoload;
+}
+
+if ( class_exists( \Soderlind\WordPress\GitHubUpdater::class ) ) {
+	\Soderlind\WordPress\GitHubUpdater::init(
+		github_url:   'https://github.com/soderlind/jev-comment-triage',
+		plugin_file:  __FILE__,
+		plugin_slug:  'jev-comment-triage',
+		name_regex:   '/jev-comment-triage\.zip/',
+		branch:       'main',
+		check_period: 6,
+	);
 }
 
 const META_KEY      = '_jev_triage';

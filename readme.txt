@@ -3,7 +3,7 @@ Contributors: PerS
 Requires at least: 6.8
 Tested up to: 6.7
 Requires PHP: 8.3
-Stable tag: 2.0.0
+Stable tag: 2.1.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Tags: comments, moderation, spam, ai, anti-spam
@@ -64,6 +64,12 @@ No. It remembers WordPress's own decision and only downgrades to spam or hold. C
 The comment stays pending (never auto-published) and is retried on later drain ticks; after a few failed attempts it is left held for a human.
 
 == Changelog ==
+
+= 2.1.0 =
+* Self-updates from GitHub releases, checked every 6 hours.
+* GitHub Actions build and attach the release zip, and run the test suite on PHP 8.3 and 8.4.
+* The release zip ships only runtime files.
+* Added WordPress.org plugin banners and icons.
 
 = 2.0.0 =
 * Breaking: `jct_thresholds` now uses `spam`, `abusive`, `relevance`, and `clean`. The `spam` key keeps working; other 1.4.0 keys are ignored.

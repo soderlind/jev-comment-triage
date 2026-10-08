@@ -1,0 +1,59 @@
+name: Manually build release zip
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to package and upload
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_SLUG: jev-comment-triage
+  PLUGIN_ZIP: jev-comment-triage.zip
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout requested tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer
+
+      - name: Install production Composer dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+
+      - name: Verify updater dependency
+        run: |
+          test -d vendor/soderlind/wordpress-github-updater
+          test -d vendor/yahnis-elsts/plugin-update-checker
+
+      - name: Build plugin zip
+        run: |
+          mkdir -p "/tmp/${PLUGIN_SLUG}"
+          rsync -a --exclude-from=.distignore --exclude='.git' ./ "/tmp/${PLUGIN_SLUG}/"
+          ( cd /tmp && zip -rq "${GITHUB_WORKSPACE}/${PLUGIN_ZIP}" "${PLUGIN_SLUG}" )
+
+      - name: Verify archive contents
+        run: |
+          unzip -t "$PLUGIN_ZIP"
+          unzip -l "$PLUGIN_ZIP" | grep -q "${PLUGIN_SLUG}/vendor/soderlind/wordpress-github-updater"
+          unzip -l "$PLUGIN_ZIP" | grep -q "${PLUGIN_SLUG}/vendor/yahnis-elsts/plugin-update-checker"
+          unzip -l "$PLUGIN_ZIP" | grep -q "${PLUGIN_SLUG}/jev-comment-triage.php"
+
+      - name: Attach zip to release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
+        with:
+          files: ${{ env.PLUGIN_ZIP }}
+          tag_name: ${{ inputs.tag }}

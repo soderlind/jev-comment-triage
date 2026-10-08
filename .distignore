@@ -1,0 +1,33 @@
+# Files and folders excluded from the distributable plugin zip.
+# Patterns are rsync --exclude-from compatible.
+
+.git/
+.github/
+.gitignore
+.gitattributes
+.distignore
+.markdownlint.json
+.wordpress-org/
+.DS_Store
+
+bin/
+docs/
+node_modules/
+tests/
+vendor/bin/
+vendor/soderlind/wordpress-github-updater/README.md
+vendor/soderlind/wordpress-github-updater/composer.json
+vendor/soderlind/wordpress-github-updater/composer.lock
+vendor/soderlind/wordpress-github-updater/vendor/
+vendor/yahnis-elsts/plugin-update-checker/README.md
+vendor/yahnis-elsts/plugin-update-checker/composer.json
+
+CHANGELOG.md
+README.md
+composer.json
+composer.lock
+i18n-map.json
+package.json
+package-lock.json
+phpunit.xml
+phpunit.xml.dist

@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-08
+
+### Added
+
+- Self-updates from GitHub releases through
+  [`soderlind/wordpress-github-updater`](https://github.com/soderlind/wordpress-plugin-gitHub-updater),
+  which checks for a new release every 6 hours and installs the
+  `jev-comment-triage.zip` asset.
+- GitHub Actions: a CI workflow that validates the Composer metadata and runs
+  the test suite on PHP 8.3 and 8.4, plus release-triggered and manual
+  workflows that build `jev-comment-triage.zip` and attach it to the release.
+- `.distignore`, so the release zip contains only the runtime plugin files and
+  the production Composer dependencies.
+- An Installation section in `README.md` linking to the latest release zip.
+- WordPress.org plugin banners and icons.
+
 ## [2.0.0] - 2026-10-08
 
 ### Added
@@ -120,6 +136,7 @@ All notable changes to this project are documented here. The format is based on
 - Initial release: synchronous spam + toxicity triage on `pre_comment_approved`,
   scores stored as comment meta, and a "Jev" column on the admin Comments screen.
 
+[2.1.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.1.0
 [2.0.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.0.0
 [1.4.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.4.0
 [1.3.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/1.3.0
