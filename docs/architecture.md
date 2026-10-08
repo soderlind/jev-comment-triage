@@ -8,7 +8,8 @@ Jev, and then routes them to approved, held, or spam status. The design keeps th
 remote model call off the comment-submission request and preserves WordPress's
 own moderation decision as an upper bound on what the plugin may publish.
 
-This document describes the current implementation in `jev-comment-triage.php`.
+This document describes the current implementation in `jev-comment-triage.php`
+and `includes/Assessment.php`.
 
 ## Scope
 
@@ -46,6 +47,7 @@ flowchart LR
     Cron --> Plugin
     Plugin --> Provider[AI Provider for Jev]
     Provider --> TypeSafe[TypeSafe Jev API]
+    Plugin --> Releases[GitHub Releases]
     Plugin --> Status[WordPress comment status]
     Moderator[Site moderator] --> Status
 ```
@@ -54,10 +56,14 @@ The TypeSafe call crosses an external-service trust boundary. Comment text, post
 title and content, link count, and optionally author details leave WordPress
 through `AiProviderForJev\evaluate()`. The `jct_include_author_details` filter can
 exclude author name, email, and URL, but it does not exclude the comment or post.
+The updater separately checks this repository's public GitHub releases every
+six hours and installs the matching `jev-comment-triage.zip` asset.
 
 ## Major components
 
-All runtime components are functions in `jev-comment-triage.php`.
+The hook-driven orchestration is in `jev-comment-triage.php`; Jev request
+construction and response validation are behind the `Assessment` module in
+`includes/Assessment.php`.
 
 | Component | Responsibility | Primary symbols | Depends on |
 |---|---|---|---|
@@ -66,16 +72,17 @@ All runtime components are functions in `jev-comment-triage.php`.
 | Request-local handoff | Matches `defer()` with `enqueue()` before a comment ID exists | `base_registry()`, `fingerprint()` | In-process static memory |
 | Queue persistence | Marks comments for background processing and stores the base decision | `enqueue()` | WordPress comment meta, WP-Cron |
 | Scheduler and drain | Registers the minute interval, schedules work, selects a bounded batch, and limits overlap | `add_schedule()`, `ensure_scheduled()`, `drain()` | WP-Cron, transients |
-| Jev assessment | Sends the post once as state, asks relevance/spam/abuse questions per comment, and validates each comment's answers separately | `comment_payload()`, `comment_questions()`, `assess_many()`, `assess_isolated()`, `is_request_rejection()`, `parse_answers()`, `assess()` | `AiProviderForJev\evaluate()` |
+| Jev assessment | Sends the post once as state, asks relevance/spam/abuse questions per comment, validates each answer, and isolates request-body rejections behind one interface | `Assessment::assess()` | Injected `AiProviderForJev\evaluate()` adapter |
 | Decision policy | Applies risk-scaled thresholds to the three judgments | `thresholds()`, `decide()` | `jct_thresholds` filter |
 | Comment processor | Groups comments by post, chunks requests, applies the short-comment rule and spam cache, records retries, persists results, and changes status | `process_comments()`, `process_chunk()`, `apply_assessment()`, `record_failure()`, `finalize()` | Comment meta, WordPress status API |
 | Spam cache | Stores confident spam verdicts by a hash of the exact comment payload and counts would-be hits atomically | `spam_cache_key()`, `cache_salt()`, `record_cache_stats()`, `increment_counter()`, `cache_stats()` | Site transients, `jct_spam_cache_salt` and `jct_spam_cache_stats_*` site options |
 | Administration | Displays the result and explains privacy and cron requirements | `add_column()`, `render_column()`, `register_privacy_content()`, `cron_notice()` | WordPress admin hooks |
+| Updater | Checks GitHub Releases and installs the packaged plugin artifact | `GitHubUpdater::init()` | Composer autoloader, GitHub Releases |
 | Cleanup | Removes schedules, transients, and plugin-owned metadata on uninstall | `uninstall.php` | WordPress uninstall process |
 
 The plugin has one production entry point, `jev-comment-triage.php`. It is
-procedural and hook-driven; there is no internal service container or class
-boundary.
+procedural and hook-driven, with the assessment implementation concentrated in
+one injected class. There is no internal service container.
 
 ## Domain terms and persisted state
 
@@ -196,18 +203,20 @@ Trigger: the recurring or immediate `jct_drain` WP-Cron event.
    - a spam-cache hit is counted. With `jct_spam_cache` enabled the cached
      verdict is applied without a call; otherwise the comment is still sent to
      Jev (shadow mode).
-6. The remaining comments in the chunk go to `assess_many()` in **one** request:
+6. The remaining comments in the chunk go to `Assessment::assess()` in **one**
+   request:
    the post title and content are the shared state, and every comment adds
    three questions whose `instructions` object carries that comment (content,
    link count, and optional author details).
-7. `parse_answers()` validates each comment's three answers on its own: a
-   known relevance choice, confidence and every probability within `0..1`,
-   all relevance options present, and numeric Noul values within `0..1`.
-8. `assess_isolated()` wraps `assess_many()`. If Jev rejects the request (HTTP
-   413 or 422 — the statuses for a rejected body), it splits the chunk in half
-   and retries each half until the offending comment stands alone. Outages,
-   timeouts, auth or configuration errors (such as 404), and rate limits are
-   not split. Each comment whose
+7. The `Assessment` implementation validates each comment's three answers on
+   its own: a known relevance choice, confidence and every probability within
+   `0..1`, all relevance options present, and numeric Noul values within
+   `0..1`.
+8. If Jev rejects the request (HTTP 413 or 422 — the statuses for a rejected
+   body), `Assessment::assess()` splits the chunk in half and retries each half
+   until the offending comment stands alone. Outages, timeouts, auth or
+   configuration errors (such as 404), and rate limits are not split. Each
+   comment whose
    own request failed, or whose answers are invalid, calls `record_failure()`. Attempts one and two
    remain pending for a later drain. At attempt three, it removes
    `_jct_pending` and leaves the comment held.
@@ -254,8 +263,8 @@ Enforced by:
 
 - `decide()`, which holds abusive, borderline, low-confidence, off-topic,
   unclear, and default cases, and holds any assessment without judgments.
-- `parse_answers()`, which converts each malformed or missing answer to
-  `WP_Error`.
+- `Assessment::assess()`, whose private parser converts each malformed or
+  missing answer to `WP_Error`.
 - `process_chunk()` and `record_failure()`, which leave failed comments held
   and retry at most three times, per comment.
 - The spam cache, which can only ever produce a spam or hold decision.
@@ -266,8 +275,8 @@ Verified by low-confidence, API-error, and malformed-response cases in
 ### Asynchronous boundary
 
 The comment-submission request may write metadata and schedule work but must not
-call TypeSafe. The external call exists only in `assess_many()`, reached from
-`process_chunk()` through `assess_isolated()` during the cron drain.
+call TypeSafe. The external call exists only behind `Assessment::assess()`,
+reached from `process_chunk()` during the cron drain.
 
 ### Persistence boundary
 
@@ -292,7 +301,8 @@ second drain process.
   model for bounded, typed judgments. Each comment sits inside its own
   questions rather than in shared state, and the live fixtures include a
   prompt-injection attempt, which was routed to spam.
-- `parse_answers()` validates every answer before policy code consumes it.
+- The private parser behind `Assessment::assess()` validates every answer before
+  policy code consumes it.
 - The spam cache stores a salted hash and two probabilities, not comment text
   or author details.
 - Author PII is included by default and can be excluded with
@@ -328,17 +338,26 @@ second drain process.
 - `cron_notice()` warns administrators on the Comments and Plugins screens when
   `DISABLE_WP_CRON` is enabled. Supplying a real system cron remains an
   operational responsibility outside the plugin.
+- The plugin entry point loads production Composer dependencies and initializes
+  the GitHub updater for the public repository, the `main` branch, and a
+  six-hour check period.
+- Both release workflows install production dependencies, filter the repository
+  through `.distignore`, build a `jev-comment-triage/`-rooted ZIP, verify its
+  runtime dependencies, and attach `jev-comment-triage.zip` to a GitHub release.
 
 ## Testing architecture
 
-Pest runs through Composer using `composer test`. Brain Monkey replaces
-WordPress functions, while `tests/bootstrap.php` supplies the minimal WordPress
-classes and constants needed to load the production entry point.
+Pest runs through Composer using `composer test`. Assessment tests inject an
+in-memory provider adapter directly into the module. Orchestration tests use
+Brain Monkey to replace WordPress functions and the production provider
+adapter, while `tests/bootstrap.php` supplies the minimal WordPress classes and
+constants needed to load the production entry point.
 
 | Test file | Architectural responsibility |
 |---|---|
+| `tests/Unit/AssessmentTest.php` | Assessment interface, typed question construction, normalized keyed results, per-comment validation, and 413/422 isolation |
 | `tests/Unit/DeferTest.php` | Eligibility, deferral, and preservation of WordPress decisions |
-| `tests/Unit/LogicTest.php` | Link and word counting, cache-key sensitivity to every spam-visible field and to salt rotation, which errors may split a request, decision policy, threshold merging, and trusted-user checks |
+| `tests/Unit/LogicTest.php` | Link and word counting, cache-key sensitivity to every spam-visible field and to salt rotation, decision policy, threshold merging, and trusted-user checks |
 | `tests/Unit/ProcessCommentTest.php` | Request shape, outcomes per judgment, per-post batching and chunking, per-comment retries, isolation of a comment that gets a request rejected, no splitting on outages or configuration errors, atomic counter SQL, spam cache (store, shadow, enabled), the short-comment rule, and the admin column text |
 
 The tests are unit-level simulations. They do not verify real WP-Cron scheduling,
@@ -383,15 +402,16 @@ plugin:
 
 | Change | Primary location | Also update |
 |---|---|---|
-| Change question wording or options | `comment_questions()` and `RELEVANCE_OPTIONS` | bump `SCHEMA_VERSION` (invalidates cached verdicts), `parse_answers()`, `column_text()`, tests, benchmark fixtures, README/readme |
+| Change question wording or options | Private question schema in `includes/Assessment.php` | bump `SCHEMA_VERSION` (invalidates cached verdicts), update assessment tests, `column_text()`, benchmark fixtures, README/readme |
 | Change decision policy | `decide()` and `DEFAULT_THRESHOLDS` | logic/process tests, hook documentation; re-run `bin/benchmark.php` |
 | Change spam-cache behavior | `process_chunk()`, `spam_cache_key()`, `SPAM_CACHE_*` constants | cache tests, `uninstall.php`, privacy text |
 | Change comment eligibility | `defer()` and `enqueue()` | defer tests; keep both paths consistent |
 | Change queued metadata or lifecycle | Constants, `enqueue()`, `drain()`, `process_chunk()`, `apply_assessment()` | `uninstall.php`, process tests, this document |
 | Change retry behavior | `MAX_ATTEMPTS` and `record_failure()` | process tests and lifecycle documentation |
 | Change scheduling or batching | `add_schedule()`, `ensure_scheduled()`, `enqueue()`, `drain()`, `process_comments()`, `COMMENTS_PER_REQUEST` | admin notice, operational docs, batching tests |
-| Change data sent externally | `comment_payload()` and `assess_many()` | privacy-policy text, README/readme privacy sections, translation template |
+| Change data sent externally | `comment_payload()` and `Assessment::assess()` | privacy-policy text, README/readme privacy sections, translation template |
 | Change admin presentation | `add_column()`, `render_column()`, `column_text()` | translation template when strings change |
+| Change updater or release artifact behavior | Updater bootstrap, `.distignore`, and `.github/workflows/` | Composer dependencies, installation docs, and archive-content checks |
 
 ## Current limitations and open questions
 

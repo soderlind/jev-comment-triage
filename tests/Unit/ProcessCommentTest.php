@@ -130,7 +130,7 @@ it( 'sends the post once as state and the comment inside three typed questions',
 				static fn( array $questions ): bool =>
 					[ 'c0_relevance', 'c0_spam', 'c0_abusive' ] === array_keys( $questions )
 					&& 'choice' === $questions['c0_relevance']['type']
-					&& \JevCommentTriage\RELEVANCE_OPTIONS === array_keys( $questions['c0_relevance']['criteria'] )
+					&& [ 'on_topic', 'off_topic', 'unclear' ] === array_keys( $questions['c0_relevance']['criteria'] )
 					&& 'noul' === $questions['c0_spam']['type']
 					&& 'noul' === $questions['c0_abusive']['type']
 					&& 'A relevant reply.' === $questions['c0_spam']['instructions']['comment']['content']

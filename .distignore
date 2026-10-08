@@ -23,6 +23,7 @@ vendor/yahnis-elsts/plugin-update-checker/README.md
 vendor/yahnis-elsts/plugin-update-checker/composer.json
 
 CHANGELOG.md
+GLOSSARY.md
 README.md
 composer.json
 composer.lock

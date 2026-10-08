@@ -34,6 +34,8 @@ if ( class_exists( \Soderlind\WordPress\GitHubUpdater::class ) ) {
 	);
 }
 
+require_once __DIR__ . '/includes/Assessment.php';
+
 const META_KEY      = '_jev_triage';
 const PENDING_META  = '_jct_pending';
 const ATTEMPTS_META = '_jct_attempts';
@@ -46,8 +48,6 @@ const LOCK_KEY      = 'jct_draining';
 // Version of the stored assessment shape and of the questions asked. Bump it
 // when question wording changes so cached verdicts are not reused.
 const SCHEMA_VERSION = 2;
-
-const RELEVANCE_OPTIONS = [ 'on_topic', 'off_topic', 'unclear' ];
 
 // Thresholds scale with the cost of a wrong action: publishing needs a
 // confident on-topic answer and clean spam/abuse signals; flagging spam needs
@@ -145,220 +145,6 @@ function comment_payload( array $commentdata, int $link_count ): array {
 	}
 
 	return $payload;
-}
-
-/**
- * The three independent judgments asked about one comment.
- *
- * Relevance is a Choice because its options are mutually exclusive. Spam and
- * abuse are separate Nouls because a comment can be on-topic and still be
- * spam or abusive. The comment travels inside each question so several
- * comments on one post can share a single request.
- *
- * @param array<string, mixed> $comment Comment payload from comment_payload().
- * @return array<string, array<string, mixed>> Questions keyed relevance/spam/abusive.
- */
-function comment_questions( array $comment ): array {
-	return [
-		'relevance' => [
-			'type'         => 'choice',
-			'instructions' => [
-				'question' => 'How does `comment.content` relate to the blog post in `post.title` and `post.content`?',
-				'comment'  => $comment,
-			],
-			'criteria'     => [
-				'on_topic'  => 'It discusses, questions, critiques, or adds to the subject of the post.',
-				'off_topic' => 'It is about something unrelated to the post.',
-				'unclear'   => 'It is too short, garbled, or vague to tell.',
-			],
-		],
-		'spam'      => [
-			'type'         => 'noul',
-			'instructions' => [
-				'question' => 'Is `comment` spam: unsolicited promotion or advertising, a scam, phishing, SEO link-dropping, or bulk content not written as genuine discussion? A comment can mention the post and still be spam.',
-				'comment'  => $comment,
-			],
-		],
-		'abusive'   => [
-			'type'         => 'noul',
-			'instructions' => [
-				'question' => 'Does `comment.content` contain insults, harassment, threats, hate speech, or other abuse directed at a person or group?',
-				'comment'  => $comment,
-			],
-		],
-	];
-}
-
-/**
- * Validate and normalize the three answers for one comment.
- *
- * @param array<string, mixed> $answers All answers in the response.
- * @param string               $prefix  Question-id prefix for this comment.
- * @return array<string, mixed>|\WP_Error
- */
-function parse_answers( array $answers, string $prefix ): array|\WP_Error {
-	$relevance     = $answers[ $prefix . 'relevance' ] ?? null;
-	$choice        = is_array( $relevance ) ? (string) ( $relevance['choice'] ?? '' ) : '';
-	$confidence    = is_array( $relevance ) ? ( $relevance['confidence'] ?? null ) : null;
-	$probabilities = is_array( $relevance ) ? ( $relevance['probabilities'] ?? null ) : null;
-
-	if (
-		! in_array( $choice, RELEVANCE_OPTIONS, true )
-		|| ! is_unit_interval( $confidence )
-		|| ! is_array( $probabilities )
-		|| array_diff( RELEVANCE_OPTIONS, array_keys( $probabilities ) )
-	) {
-		return new \WP_Error( 'jct_invalid_response', 'Jev returned an invalid relevance answer.' );
-	}
-
-	foreach ( $probabilities as $probability ) {
-		if ( ! is_unit_interval( $probability ) ) {
-			return new \WP_Error( 'jct_invalid_response', 'Jev returned invalid relevance probabilities.' );
-		}
-	}
-
-	$signals = [];
-	foreach ( [ 'spam', 'abusive' ] as $id ) {
-		$answer = $answers[ $prefix . $id ] ?? null;
-		$value  = is_array( $answer ) ? ( $answer['noul'] ?? null ) : null;
-		if ( ! is_unit_interval( $value ) ) {
-			return new \WP_Error( 'jct_invalid_response', 'Jev returned an invalid ' . $id . ' answer.' );
-		}
-		$signals[ $id ] = (float) $value;
-	}
-
-	return [
-		'version'   => SCHEMA_VERSION,
-		'source'    => 'jev',
-		'relevance' => [
-			'choice'        => $choice,
-			'confidence'    => (float) $confidence,
-			'probabilities' => array_map( 'floatval', $probabilities ),
-		],
-		'spam'      => $signals['spam'],
-		'abusive'   => $signals['abusive'],
-	];
-}
-
-/**
- * Whether a value is a number between 0 and 1 inclusive.
- *
- * @param mixed $value Value to check.
- */
-function is_unit_interval( mixed $value ): bool {
-	return is_numeric( $value ) && (float) $value >= 0.0 && (float) $value <= 1.0;
-}
-
-/**
- * Judge several comments on the same post in one Jev request.
- *
- * The post is the shared state, sent once; each comment contributes its own
- * relevance, spam, and abuse questions. Every comment is validated on its own,
- * so one malformed answer does not discard the others.
- *
- * @param array                                               $postdata Post data (post_title, post_content).
- * @param array<int|string, array{commentdata:array, link_count:int}> $items    Comments keyed by caller id.
- * @return array<int|string, array<string, mixed>|\WP_Error>|\WP_Error Per-item assessments, or an error for the whole request.
- */
-function assess_many( array $postdata, array $items ): array|\WP_Error {
-	if ( [] === $items ) {
-		return [];
-	}
-
-	$state     = [
-		'post' => [
-			'title'   => (string) ( $postdata['post_title'] ?? '' ),
-			'content' => (string) ( $postdata['post_content'] ?? '' ),
-		],
-	];
-	$questions = [];
-	$prefixes  = [];
-	$index     = 0;
-
-	foreach ( $items as $key => $item ) {
-		$prefix           = 'c' . $index++ . '_';
-		$prefixes[ $key ] = $prefix;
-		$payload          = comment_payload( (array) $item['commentdata'], (int) $item['link_count'] );
-
-		foreach ( comment_questions( $payload ) as $id => $question ) {
-			$questions[ $prefix . $id ] = $question;
-		}
-	}
-
-	$response = \AiProviderForJev\evaluate( $state, $questions );
-
-	if ( is_wp_error( $response ) ) {
-		return $response;
-	}
-
-	$answers = is_array( $response['answers'] ?? null ) ? $response['answers'] : [];
-	$results = [];
-
-	foreach ( $prefixes as $key => $prefix ) {
-		$results[ $key ] = parse_answers( $answers, $prefix );
-	}
-
-	return $results;
-}
-
-/**
- * Judge comments like assess_many(), isolating comments that break a request.
- *
- * A rejected request body (HTTP 413 or 422) can be caused by a single comment,
- * for example one that is too large. Such a chunk is split
- * in half and retried, so only the offending comment uses up its attempts.
- * Outages, timeouts, auth failures, and rate limits are returned for every
- * comment unchanged, so they do not multiply into more requests.
- *
- * @param array                                                        $postdata Post data.
- * @param array<int|string, array{commentdata:array, link_count:int}> $items    Comments keyed by caller id.
- * @return array<int|string, array<string, mixed>|\WP_Error> Per-item assessments or errors.
- */
-function assess_isolated( array $postdata, array $items ): array {
-	$results = assess_many( $postdata, $items );
-
-	if ( ! is_wp_error( $results ) ) {
-		return $results;
-	}
-
-	if ( count( $items ) < 2 || ! is_request_rejection( $results ) ) {
-		return array_fill_keys( array_keys( $items ), $results );
-	}
-
-	$halves = array_chunk( $items, (int) ceil( count( $items ) / 2 ), true );
-
-	return assess_isolated( $postdata, $halves[0] ) + assess_isolated( $postdata, $halves[1] );
-}
-
-/**
- * Whether an API error means the request body itself was rejected — the only
- * failures one comment can cause — as opposed to an outage, timeout, auth,
- * configuration, or rate-limit problem that splitting would only multiply.
- *
- * TypeSafe documents 422 for a body that fails validation; 413 is the standard
- * status for a body that is too large.
- *
- * @param \WP_Error $error Error from the provider.
- */
-function is_request_rejection( \WP_Error $error ): bool {
-	$data   = $error->get_error_data();
-	$status = is_array( $data ) ? (int) ( $data['status'] ?? 0 ) : 0;
-
-	return in_array( $status, [ 413, 422 ], true );
-}
-
-/**
- * Judge one comment in the context of its post.
- *
- * @param array $commentdata Comment data.
- * @param array $postdata    Post data.
- * @param int   $link_count  Pre-computed link count.
- * @return array<string, mixed>|\WP_Error
- */
-function assess( array $commentdata, array $postdata, int $link_count ): array|\WP_Error {
-	$results = assess_many( $postdata, [ 0 => [ 'commentdata' => $commentdata, 'link_count' => $link_count ] ] );
-
-	return is_wp_error( $results ) ? $results : $results[0];
 }
 
 /**
@@ -593,9 +379,14 @@ function process_comment( \WP_Comment $comment ): void {
  * comment is left pending (fail-safe against spam) and retried on later ticks;
  * after MAX_ATTEMPTS it is left held for a human.
  *
- * @param array<int, \WP_Comment> $comments Comments to process.
+ * @param array<int, \WP_Comment> $comments   Comments to process.
+ * @param Assessment|null         $assessment Assessment module; defaults to the configured Jev adapter.
  */
-function process_comments( array $comments ): void {
+function process_comments( array $comments, ?Assessment $assessment = null ): void {
+	$assessment ??= new Assessment(
+		static fn( array $state, array $questions ) => \AiProviderForJev\evaluate( $state, $questions )
+	);
+
 	$by_post = [];
 	foreach ( $comments as $comment ) {
 		if ( $comment instanceof \WP_Comment ) {
@@ -614,7 +405,7 @@ function process_comments( array $comments ): void {
 		];
 
 		foreach ( array_chunk( $group, $per_request ) as $chunk ) {
-			process_chunk( $postdata, $chunk, $stats );
+			process_chunk( $postdata, $chunk, $stats, $assessment );
 		}
 	}
 
@@ -626,9 +417,10 @@ function process_comments( array $comments ): void {
  *
  * @param array                    $postdata Post data (post_title, post_content).
  * @param array<int, \WP_Comment>  $comments Comments on that post.
- * @param array<string, int>       $stats    Spam-cache counters, updated in place.
+ * @param array<string, int>       $stats      Spam-cache counters, updated in place.
+ * @param Assessment               $assessment Assessment module.
  */
-function process_chunk( array $postdata, array $comments, array &$stats ): void {
+function process_chunk( array $postdata, array $comments, array &$stats, Assessment $assessment ): void {
 	$use_cache = (bool) apply_filters( 'jct_spam_cache', false );
 	$min_words = max( 0, (int) apply_filters( 'jct_min_words', 0 ) );
 	$items     = [];
@@ -692,35 +484,33 @@ function process_chunk( array $postdata, array $comments, array &$stats ): void 
 		return;
 	}
 
-	$results = assess_isolated( $postdata, $items );
+	$results = $assessment->assess( $postdata, $items );
 
 	foreach ( $items as $comment_id => $item ) {
-		$assessment = is_wp_error( $results )
-			? $results
-			: ( $results[ $comment_id ] ?? new \WP_Error( 'jct_invalid_response', 'Jev returned no answer for this comment.' ) );
+		$result = $results[ $comment_id ] ?? new \WP_Error( 'jct_invalid_response', 'Jev returned no answer for this comment.' );
 
-		if ( is_wp_error( $assessment ) ) {
+		if ( is_wp_error( $result ) ) {
 			record_failure( $comment_id );
 			continue;
 		}
 
-		if ( isset( $shadowed[ $comment_id ] ) && $assessment['spam'] >= thresholds( $assessment )['spam'] ) {
+		if ( isset( $shadowed[ $comment_id ] ) && $result['spam'] >= thresholds( $result )['spam'] ) {
 			++$stats['agreed'];
 		}
 
-		if ( $assessment['spam'] >= SPAM_CACHE_MIN ) {
+		if ( $result['spam'] >= SPAM_CACHE_MIN ) {
 			set_site_transient(
 				SPAM_CACHE_PREFIX . $item['cache_key'],
 				[
 					'version' => SCHEMA_VERSION,
-					'spam'    => $assessment['spam'],
-					'abusive' => $assessment['abusive'],
+					'spam'    => $result['spam'],
+					'abusive' => $result['abusive'],
 				],
 				SPAM_CACHE_TTL
 			);
 		}
 
-		apply_assessment( $comment_id, $bases[ $comment_id ], $assessment, $item['link_count'] );
+		apply_assessment( $comment_id, $bases[ $comment_id ], $result, $item['link_count'] );
 	}
 }
 

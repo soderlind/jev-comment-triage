@@ -170,7 +170,7 @@ foreach ( $flags as $flag ) {
 	}
 }
 
-if ( ! function_exists( 'JevCommentTriage\\assess_many' ) ) {
+if ( ! class_exists( Triage\Assessment::class ) ) {
 	\WP_CLI::error( 'jev-comment-triage is not active on this site.' );
 }
 

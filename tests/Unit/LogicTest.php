@@ -12,7 +12,6 @@ use Brain\Monkey\Functions;
 use function JevCommentTriage\comment_payload;
 use function JevCommentTriage\count_links;
 use function JevCommentTriage\decide;
-use function JevCommentTriage\is_request_rejection;
 use function JevCommentTriage\is_trusted;
 use function JevCommentTriage\spam_cache_key;
 use function JevCommentTriage\thresholds;
@@ -82,16 +81,6 @@ describe( 'spam cache key', function (): void {
 
 		expect( key_for( 'Great post! thanks' ) )->not->toBe( $before );
 	} );
-} );
-
-it( 'splits only on request-body rejections', function (): void {
-	foreach ( [ 413, 422 ] as $status ) {
-		expect( is_request_rejection( new WP_Error( 'jev_api_error', 'x', [ 'status' => $status ] ) ) )->toBeTrue();
-	}
-	foreach ( [ 400, 401, 403, 404, 405, 429, 500, 529 ] as $status ) {
-		expect( is_request_rejection( new WP_Error( 'jev_api_error', 'x', [ 'status' => $status ] ) ) )->toBeFalse();
-	}
-	expect( is_request_rejection( new WP_Error( 'http_request_failed', 'timeout' ) ) )->toBeFalse();
 } );
 
 describe( 'decide', function (): void {
