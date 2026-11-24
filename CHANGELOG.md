@@ -11,11 +11,13 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 
 - Jev now replaces the AI plugin's Comment Moderation experiment for regular
-  comments: they are filtered out of `wpai_comment_moderation_comment_types`,
-  so `ai/comment-analysis` is not called on submit and the experiment no longer
-  changes their status. Opt out with the `jct_override_ai_moderation` filter.
+  comments it holds on submit: they are filtered out of
+  `wpai_comment_moderation_comment_types`, so `ai/comment-analysis` is not
+  called and the experiment no longer changes their status. Direct
+  `wp_insert_comment()` calls stay with the AI plugin. Opt out with the
+  `jct_override_ai_moderation` filter.
 - `bin/compare.php`: a head-to-head benchmark of Jev against the AI plugin's
-  `ai/comment-analysis` (any provider it is connected to) on the same fixtures.
+  `ai/comment-analysis` (OpenAI, Anthropic or Gemini) on the same fixtures.
   Results are in the README: Jev 60/60 vs OpenAI 24/60, about 165x faster per
   comment. Fixtures and timing helpers moved to `bin/fixtures.php`, shared with
   `bin/benchmark.php`.

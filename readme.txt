@@ -66,7 +66,7 @@ The comment stays pending (never auto-published) and is retried on later drain t
 == Changelog ==
 
 = 2.3.0 =
-* Jev now replaces the AI plugin's Comment Moderation experiment for regular comments: they are filtered out of `wpai_comment_moderation_comment_types`, so `ai/comment-analysis` is not called on submit and the experiment no longer changes their status. Opt out with the `jct_override_ai_moderation` filter.
+* Jev now replaces the AI plugin's Comment Moderation experiment for regular comments it holds on submit: they are filtered out of `wpai_comment_moderation_comment_types`, so `ai/comment-analysis` is not called and the experiment no longer changes their status. Direct `wp_insert_comment()` calls stay with the AI plugin. Opt out with the `jct_override_ai_moderation` filter.
 * Added `bin/compare.php`, a head-to-head benchmark of Jev against the AI plugin's `ai/comment-analysis` on the same fixtures. Results are in the README: Jev 60/60 vs OpenAI 24/60, about 165x faster per comment. Fixtures moved to `bin/fixtures.php`, shared with `bin/benchmark.php`.
 * Added a Jev tutorial, a Jev explainer, and a docs index under `docs/`.
 

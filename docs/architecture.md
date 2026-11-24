@@ -377,7 +377,7 @@ second drain process.
 | `jct_spam_cache` | Return `true` to apply cached spam verdicts without calling Jev. Default `false` (shadow mode). |
 | `jct_min_words` | Holds link-free comments with fewer words without calling Jev. Default `0` (off). |
 | `jct_include_author_details` | Controls whether name, email, and URL are included in Jev state. |
-| `jct_override_ai_moderation` | Default `true`. While the provider is ready, `yield_ai_moderation()` removes regular comment types from the AI plugin's `wpai_comment_moderation_comment_types`, so its experiment skips `ai/comment-analysis` and auto-moderation for comments Jev owns. Return `false` to keep both. |
+| `jct_override_ai_moderation` | Default `true`. While the provider is ready, `yield_ai_moderation()` removes regular comment types from the AI plugin's `wpai_comment_moderation_comment_types` for comments that `defer()` held in the same request, so its experiment skips `ai/comment-analysis` and auto-moderation for comments Jev owns. Direct `wp_insert_comment()` calls are left to the AI plugin. Return `false` to keep both. |
 | `jct_triaged` | Fires after every stored decision (from Jev, the cache, or the short-comment rule) with comment ID, assessment, and decision. It does not fire for empty comments, retries, or abandoned comments. |
 
 ## Operational behavior

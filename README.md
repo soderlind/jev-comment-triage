@@ -63,10 +63,11 @@ in a **Jev** column on the admin Comments screen.
 If the [AI plugin](https://github.com/WordPress/ai)'s
 [Comment Moderation](https://github.com/WordPress/ai/blob/trunk/docs/experiments/comment-moderation.md)
 experiment is enabled, Jev takes over its automatic moderation. While the Jev
-provider is configured, regular comments are removed from the experiment's
-`wpai_comment_moderation_comment_types` list, so it never calls the
-`ai/comment-analysis` ability for new comments and never changes their status.
-That avoids a second, synchronous AI request on every submit and conflicting
+provider is configured, each regular comment Jev holds on submit is removed
+from the experiment's `wpai_comment_moderation_comment_types` list, so it never
+calls the `ai/comment-analysis` ability for that comment and never changes its
+status. Comments created directly with `wp_insert_comment()` bypass Jev's intake,
+so the experiment still moderates those. That avoids a second, synchronous AI request on every submit and conflicting
 decisions. The experiment's manual **Analyze** row and bulk actions, its
 columns, and other comment types it is filtered to moderate are untouched.
 Return `false` from `jct_override_ai_moderation` to let both run. For how the
@@ -129,7 +130,7 @@ Thresholds rise with the cost of a wrong action:
 | `jct_spam_cache` | filter | Return `true` to skip Jev for cached spam texts (default `false`, shadow mode). |
 | `jct_min_words` | filter | Hold link-free comments with fewer words without calling Jev (default `0`, off). |
 | `jct_include_author_details` | filter | Whether to send the author name, URL, and email to the AI service (default `true`). Return `false` for stricter privacy. |
-| `jct_override_ai_moderation` | filter | Whether Jev replaces the AI plugin's automatic Comment Moderation for regular comments (default `true`). |
+| `jct_override_ai_moderation` | filter | Whether Jev replaces the AI plugin's automatic Comment Moderation for regular comments Jev holds (default `true`). |
 | `jct_triaged` | action | Fires after a decision: `do_action( 'jct_triaged', $comment_id, $assessment, $decision )`. |
 
 ```php

@@ -68,8 +68,9 @@ remove_all_actions( 'comment_post' );
 
 /*
  * Time every provider request at the HTTP layer and read its token usage.
- * Jev requests go to `/systemone`; anything else that carries a JSON `model`
- * field is counted as the AI plugin's provider.
+ * Jev requests go to `/systemone`; anything else that names a model in the JSON
+ * body (OpenAI, Anthropic) or the URL (Gemini `/models/<id>:generateContent`)
+ * is counted as the AI plugin's provider.
  */
 $http   = [
 	'jev' => [],
@@ -98,20 +99,24 @@ add_action(
 		$sent     = json_decode( (string) ( $request_args['body'] ?? '' ), true );
 		$received = is_array( $response ) ? json_decode( (string) ( $response['body'] ?? '' ), true ) : null;
 		$usage    = is_array( $received['usage'] ?? null ) ? $received['usage'] : [];
+		$gemini   = is_array( $received['usageMetadata'] ?? null ) ? $received['usageMetadata'] : [];
 
 		if ( str_contains( $url, '/systemone' ) ) {
 			$engine = 'jev';
 		} elseif ( is_array( $sent ) && isset( $sent['model'] ) ) {
 			$engine = 'ai';
 			$models[ wp_parse_url( $url, PHP_URL_HOST ) . ' ' . $sent['model'] ] = true;
+		} elseif ( preg_match( '#/models/([^/:]+):(?:stream)?generateContent#i', $url, $match ) ) {
+			$engine = 'ai';
+			$models[ wp_parse_url( $url, PHP_URL_HOST ) . ' ' . $match[1] ] = true;
 		} else {
 			return;
 		}
 
 		$http[ $engine ][] = [
 			'ns'         => (float) ( hrtime( true ) - $start ),
-			'tokens_in'  => (int) ( $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0 ),
-			'tokens_out' => (int) ( $usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0 ),
+			'tokens_in'  => (int) ( $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? $gemini['promptTokenCount'] ?? 0 ),
+			'tokens_out' => (int) ( $usage['output_tokens'] ?? $usage['completion_tokens'] ?? $gemini['candidatesTokenCount'] ?? 0 ),
 			'ok'         => ! is_wp_error( $response ) && 200 === (int) wp_remote_retrieve_response_code( $response ),
 		];
 	},
