@@ -3,7 +3,7 @@ Contributors: PerS
 Requires at least: 6.8
 Tested up to: 6.7
 Requires PHP: 8.3
-Stable tag: 2.2.0
+Stable tag: 2.3.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Tags: comments, moderation, spam, ai, anti-spam
@@ -64,6 +64,11 @@ No. It remembers WordPress's own decision and only downgrades to spam or hold. C
 The comment stays pending (never auto-published) and is retried on later drain ticks; after a few failed attempts it is left held for a human.
 
 == Changelog ==
+
+= 2.3.0 =
+* Jev now replaces the AI plugin's Comment Moderation experiment for regular comments: they are filtered out of `wpai_comment_moderation_comment_types`, so `ai/comment-analysis` is not called on submit and the experiment no longer changes their status. Opt out with the `jct_override_ai_moderation` filter.
+* Added `bin/compare.php`, a head-to-head benchmark of Jev against the AI plugin's `ai/comment-analysis` on the same fixtures. Results are in the README: Jev 60/60 vs OpenAI 24/60, about 165x faster per comment. Fixtures moved to `bin/fixtures.php`, shared with `bin/benchmark.php`.
+* Added a Jev tutorial, a Jev explainer, and a docs index under `docs/`.
 
 = 2.2.0 =
 * The PHP namespace is now `Soderlind\Plugin\JevCommentTriage`. Hooks, filters, options, and comment meta are unchanged; only code calling the plugin's namespaced functions directly is affected.

@@ -60,6 +60,33 @@ function defer( $approved, array $commentdata ) {
 }
 
 /**
+ * Take over automatic moderation from the AI plugin's Comment Moderation experiment.
+ *
+ * Removing regular comments from `wpai_comment_moderation_comment_types` makes the
+ * experiment skip them before it calls the `ai/comment-analysis` ability, so Jev
+ * alone decides and no second, synchronous AI request is made on submit.
+ *
+ * @param mixed $comment_types Comment types the AI plugin would moderate.
+ * @return mixed
+ */
+function yield_ai_moderation( $comment_types ) {
+	if ( ! is_array( $comment_types ) || ! provider_ready() ) {
+		return $comment_types;
+	}
+
+	if ( ! (bool) apply_filters( 'jct_override_ai_moderation', true ) ) {
+		return $comment_types;
+	}
+
+	return array_values(
+		array_filter(
+			$comment_types,
+			static fn( $type ): bool => ! is_regular_comment( [ 'comment_type' => (string) $type ] )
+		)
+	);
+}
+
+/**
  * Persist queue markers after WordPress has created the comment.
  *
  * @param int        $comment_id  New comment ID.

@@ -69,7 +69,7 @@ Implementations live in focused files under `includes/`.
 |---|---|---|---|
 | Composition root | `jev-comment-triage.php` | Defines constants, loads modules, initializes updates, and registers hooks | WordPress hooks |
 | Shared helpers | `includes/core.php` | Provider readiness, payload shaping, counting, and eligibility helpers | Namespaced helper functions |
-| Intake | `includes/intake.php` | Holds eligible comments, captures WordPress's decision, and persists queue markers | `defer()`, `enqueue()` |
+| Intake | `includes/intake.php` | Holds eligible comments, captures WordPress's decision, persists queue markers, and takes regular comments away from the AI plugin's Comment Moderation experiment | `defer()`, `enqueue()`, `yield_ai_moderation()` |
 | Scheduler | `includes/scheduler.php` | Registers the minute interval, schedules work, selects a bounded batch, and limits overlap | `add_schedule()`, `ensure_scheduled()`, `drain()` |
 | Assessment | `includes/class-assessment.php` | Constructs Jev requests, validates answers, and isolates request-body rejections | `Assessment::assess()` |
 | Decision policy | `includes/policy.php` | Applies risk-scaled thresholds to normalized judgments | `thresholds()`, `decide()` |
@@ -377,6 +377,7 @@ second drain process.
 | `jct_spam_cache` | Return `true` to apply cached spam verdicts without calling Jev. Default `false` (shadow mode). |
 | `jct_min_words` | Holds link-free comments with fewer words without calling Jev. Default `0` (off). |
 | `jct_include_author_details` | Controls whether name, email, and URL are included in Jev state. |
+| `jct_override_ai_moderation` | Default `true`. While the provider is ready, `yield_ai_moderation()` removes regular comment types from the AI plugin's `wpai_comment_moderation_comment_types`, so its experiment skips `ai/comment-analysis` and auto-moderation for comments Jev owns. Return `false` to keep both. |
 | `jct_triaged` | Fires after every stored decision (from Jev, the cache, or the short-comment rule) with comment ID, assessment, and decision. It does not fire for empty comments, retries, or abandoned comments. |
 
 ## Operational behavior
@@ -454,6 +455,16 @@ plugin:
   `drain()` inside one long-lived CLI process leaves stale comment and comment
   meta entries in memory, which makes later passes appear to stall. The harness
   resets the runtime object cache between passes to match production.
+
+`bin/compare.php` reuses the same fixtures (`bin/fixtures.php`) to compare Jev
+with the AI plugin's `ai/comment-analysis` on one post. It inserts the comments
+with `wp_insert_comment()` after removing all `wp_insert_comment` and
+`comment_post` callbacks, so neither plugin moderates them. It then calls
+`Assessment::assess()` in production-sized chunks and the ability class's
+`analyze_comment_by_id()` once per comment. Both are routed as if WordPress
+would approve: Jev through `decide()`, and the AI plugin through its default
+toxic-and-negative rule. Latency and tokens are read at the HTTP layer for
+both engines.
 
 ## Where to make changes
 

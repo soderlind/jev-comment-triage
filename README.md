@@ -10,6 +10,12 @@ confident answers lead to an automatic action.
 The Jev call runs **asynchronously**, off the comment-submit request, so
 commenting stays fast even though moderation calls a remote API.
 
+On the same 60 labelled comments, Jev routed **60 / 60** correctly, while the
+AI plugin's Comment Moderation with OpenAI `gpt-5.6-luna` routed 24 / 60 and
+published 33 it should not have. Jev was also about 165× faster per comment
+(12.7 ms vs 2,118 ms). See
+[Jev vs the AI plugin's Comment Moderation](#jev-vs-the-ai-plugins-comment-moderation-openai).
+
 ## Requirements
 
 - WordPress 6.8+, PHP 8.3+
@@ -51,6 +57,20 @@ commenting stays fast even though moderation calls a remote API.
 
 The answers and decision are stored as the `_jev_triage` comment meta and shown
 in a **Jev** column on the admin Comments screen.
+
+### Coexisting with the AI plugin's Comment Moderation
+
+If the [AI plugin](https://github.com/WordPress/ai)'s
+[Comment Moderation](https://github.com/WordPress/ai/blob/trunk/docs/experiments/comment-moderation.md)
+experiment is enabled, Jev takes over its automatic moderation. While the Jev
+provider is configured, regular comments are removed from the experiment's
+`wpai_comment_moderation_comment_types` list, so it never calls the
+`ai/comment-analysis` ability for new comments and never changes their status.
+That avoids a second, synchronous AI request on every submit and conflicting
+decisions. The experiment's manual **Analyze** row and bulk actions, its
+columns, and other comment types it is filtered to moderate are untouched.
+Return `false` from `jct_override_ai_moderation` to let both run. For how the
+two compare, see the [benchmark](#jev-vs-the-ai-plugins-comment-moderation-openai).
 
 ## What Jev is asked
 
@@ -109,6 +129,7 @@ Thresholds rise with the cost of a wrong action:
 | `jct_spam_cache` | filter | Return `true` to skip Jev for cached spam texts (default `false`, shadow mode). |
 | `jct_min_words` | filter | Hold link-free comments with fewer words without calling Jev (default `0`, off). |
 | `jct_include_author_details` | filter | Whether to send the author name, URL, and email to the AI service (default `true`). Return `false` for stricter privacy. |
+| `jct_override_ai_moderation` | filter | Whether Jev replaces the AI plugin's automatic Comment Moderation for regular comments (default `true`). |
 | `jct_triaged` | action | Fires after a decision: `do_action( 'jct_triaged', $comment_id, $assessment, $decision )`. |
 
 ```php
@@ -176,6 +197,45 @@ all 8. With `spam-cache` enabled, those replays skipped Jev and routing stayed
 > real system cron calling `wp-cron.php` (and set `DISABLE_WP_CRON`) so the
 > backlog is processed promptly.
 
+### Jev vs the AI plugin's Comment Moderation (OpenAI)
+
+A second harness sends the same fixtures, on the same post, to Jev and to the
+[AI plugin](https://github.com/WordPress/ai)'s `ai/comment-analysis` (here
+backed by OpenAI), and scores both against the expected routes. Nothing
+changes comment status, and the fixtures are removed afterwards.
+
+```sh
+wp eval-file wp-content/plugins/jev-comment-triage/bin/compare.php repeat=3 --url=https://example.com
+```
+
+Each engine runs the way its plugin does in production: Jev answers up to 20
+comments per request; the AI plugin makes one request per comment. The AI
+plugin is routed by its default rule (hold when toxicity ≥ 0.7 *and* sentiment
+is negative); it has no spam route. "AI + low-value hold" also holds comments
+in the plugin's own *Low value* band (< 0.4). That is not something the plugin
+does, but it shows the best case for its scores.
+
+Run below: 60 comments (3 × 20 fixtures), `jev-latest` vs OpenAI `gpt-5.6-luna`,
+on a Local multisite subsite.
+
+| Metric | Jev | AI plugin (default) | AI + low-value hold |
+| ------ | --- | ------------------- | ------------------- |
+| Routed as expected | **60 / 60** | 24 / 60 | 42 / 60 |
+| Kept from publishing (of 42 that should be) | **42 / 42** | 9 / 42 | 41 / 42 |
+| Published but should not be | **0** | 33 | 1 |
+| Good comments held or sent to spam | 0 / 18 | 0 / 18 | 0 / 18 |
+| Requests | 3 | 60 | 60 |
+| Request latency (mean / p95) | 254 / 306 ms | 2,095 / 2,756 ms | same |
+| Time per comment | **12.7 ms** | 2,118 ms | same |
+| Tokens in / out per comment | 510 / 83 | 638 / 63 | same |
+
+The default AI rule only catches comments that are both toxic and negative, so
+spam, promotion, phishing, prompt injection, off-topic, and junk comments
+all pass. Promotion and prompt injection score as non-toxic and neutral or
+positive. Its value score does separate them, but nothing in the plugin acts
+on it, and it still cannot tell spam from off-topic. Jev routed every comment
+correctly and was about 165× faster per comment, because it batches.
+
 ## Architecture
 
 See [Architecture](docs/architecture.md) for component responsibilities,
@@ -185,3 +245,13 @@ locations.
 ## License
 
 GPL-2.0-or-later
+
+## AI contribution attribution
+
+When AI tools contribute to development, add an `Assisted-by` tag to the
+commit message:
+
+`Assisted-by: AGENT_NAME:MODEL_VERSION [TOOL1] [TOOL2]`
+
+List only specialized analysis tools, not basic tools such as git or editors.
+Example: `Assisted-by: Claude:claude-3-opus coccinelle sparse`

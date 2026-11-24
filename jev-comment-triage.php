@@ -4,7 +4,7 @@
  * Description: Uses AI Provider for Jev to judge pending comments for relevance to their post, spam, and abuse, and acts only on confident answers.
  * Requires Plugins: ai-provider-for-jev
  * Requires PHP: 8.3
- * Version: 2.2.0
+ * Version: 2.3.0
  * License: GPL-2.0-or-later
  * Text Domain: jev-comment-triage
  * Domain Path: /languages
@@ -81,6 +81,8 @@ register_deactivation_hook( PLUGIN_FILE, __NAMESPACE__ . '\\deactivate' );
 // Capture the effective WordPress decision after earlier moderation filters.
 add_filter( 'pre_comment_approved', __NAMESPACE__ . '\\defer', PHP_INT_MAX, 2 );
 add_action( 'comment_post', __NAMESPACE__ . '\\enqueue', 10, 3 );
+// Replace the AI plugin's Comment Moderation experiment (ai/comment-analysis) with Jev.
+add_filter( 'wpai_comment_moderation_comment_types', __NAMESPACE__ . '\\yield_ai_moderation', PHP_INT_MAX );
 add_action( EVENT, __NAMESPACE__ . '\\drain' );
 
 add_filter( 'manage_edit-comments_columns', __NAMESPACE__ . '\\add_column' );

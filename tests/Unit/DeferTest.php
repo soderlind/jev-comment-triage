@@ -10,6 +10,7 @@ declare( strict_types=1 );
 use Brain\Monkey\Functions;
 
 use function Soderlind\Plugin\JevCommentTriage\defer;
+use function Soderlind\Plugin\JevCommentTriage\yield_ai_moderation;
 
 beforeEach(
 	function (): void {
@@ -94,5 +95,21 @@ it(
 				]
 			)
 		)->toBe( '1' );
+	}
+);
+
+it(
+	'takes regular comments away from the AI plugin moderation experiment',
+	function (): void {
+		expect( yield_ai_moderation( [ 'comment', 'review', '' ] ) )->toBe( [ 'review' ] );
+	}
+);
+
+it(
+	'leaves the AI plugin moderation alone when jct_override_ai_moderation is false',
+	function (): void {
+		Functions\when( 'apply_filters' )->justReturn( false );
+
+		expect( yield_ai_moderation( [ 'comment' ] ) )->toBe( [ 'comment' ] );
 	}
 );
