@@ -10,11 +10,13 @@ declare( strict_types=1 );
 use Brain\Monkey\Functions;
 
 use function Soderlind\Plugin\JevCommentTriage\defer;
+use function Soderlind\Plugin\JevCommentTriage\yield_ai_moderation;
 
 beforeEach(
 	function (): void {
 		// Defining the function makes provider_ready() see the provider as available.
 		Functions\when( 'AiProviderForJev\\evaluate' )->justReturn( [] );
+		Functions\when( 'wp_unslash' )->alias( 'stripslashes' );
 	}
 );
 
@@ -94,5 +96,72 @@ it(
 				]
 			)
 		)->toBe( '1' );
+	}
+);
+
+it(
+	'takes comments Jev held away from the AI plugin moderation experiment',
+	function (): void {
+		defer(
+			'1',
+			[
+				'user_id'              => 0,
+				'comment_type'         => 'comment',
+				'comment_content'      => 'It\\\'s claimed',
+				'comment_author_email' => 'held@b.test',
+				'comment_post_ID'      => 7,
+			]
+		);
+		$comment = new WP_Comment(
+			[
+				'comment_content'      => "It's claimed",
+				'comment_author_email' => 'held@b.test',
+				'comment_post_ID'      => '7',
+			]
+		);
+
+		expect( yield_ai_moderation( [ 'comment', 'review', '' ], $comment ) )->toBe( [ 'review' ] );
+	}
+);
+
+it(
+	'leaves direct inserts Jev never held to the AI plugin',
+	function (): void {
+		$comment = new WP_Comment(
+			[
+				'comment_content'      => 'Inserted directly',
+				'comment_author_email' => 'direct@b.test',
+				'comment_post_ID'      => 7,
+			]
+		);
+
+		expect( yield_ai_moderation( [ 'comment' ], $comment ) )->toBe( [ 'comment' ] );
+	}
+);
+
+it(
+	'leaves the AI plugin moderation alone when jct_override_ai_moderation is false',
+	function (): void {
+		defer(
+			'1',
+			[
+				'user_id'              => 0,
+				'comment_type'         => 'comment',
+				'comment_content'      => 'opt out',
+				'comment_author_email' => 'opt@b.test',
+				'comment_post_ID'      => 8,
+			]
+		);
+		Functions\when( 'apply_filters' )->justReturn( false );
+
+		$comment = new WP_Comment(
+			[
+				'comment_content'      => 'opt out',
+				'comment_author_email' => 'opt@b.test',
+				'comment_post_ID'      => 8,
+			]
+		);
+
+		expect( yield_ai_moderation( [ 'comment' ], $comment ) )->toBe( [ 'comment' ] );
 	}
 );

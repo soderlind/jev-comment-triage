@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-24
+
+### Added
+
+- Jev now replaces the AI plugin's Comment Moderation experiment for regular
+  comments it holds on submit: they are filtered out of
+  `wpai_comment_moderation_comment_types`, so `ai/comment-analysis` is not
+  called and the experiment no longer changes their status. Direct
+  `wp_insert_comment()` calls stay with the AI plugin. Opt out with the
+  `jct_override_ai_moderation` filter.
+- `bin/compare.php`: a head-to-head benchmark of Jev against the AI plugin's
+  `ai/comment-analysis` (OpenAI, Anthropic or Gemini) on the same fixtures.
+  Results are in the README: Jev 60/60 vs OpenAI 24/60, about 165x faster per
+  comment. Fixtures and timing helpers moved to `bin/fixtures.php`, shared with
+  `bin/benchmark.php`.
+- A Jev tutorial, a Jev explainer, and a docs index under `docs/`.
+
 ## [2.2.0] - 2026-10-09
 
 ### Changed
@@ -160,6 +177,7 @@ All notable changes to this project are documented here. The format is based on
 - Initial release: synchronous spam + toxicity triage on `pre_comment_approved`,
   scores stored as comment meta, and a "Jev" column on the admin Comments screen.
 
+[2.3.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.3.0
 [2.2.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.2.0
 [2.1.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.1.0
 [2.0.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.0.0
