@@ -237,6 +237,16 @@ positive. Its value score does separate them, but nothing in the plugin acts
 on it, and it still cannot tell spam from off-topic. Jev routed every comment
 correctly and was about 165× faster per comment, because it batches.
 
+### Jev vs Akismet
+
+[`benchmark/`](benchmark/README.md) compares Jev with
+[Akismet](https://wordpress.org/plugins/akismet/) on spam detection. It uses
+the fixtures and a balanced sample from the public YouTube Spam Collection.
+On 200 YouTube comments, Jev caught 52 of 100 spam comments at its default
+threshold, and Akismet caught 2. Neither engine flagged a legitimate comment
+as spam. See the benchmark README for the method, limitations, and how to run
+it.
+
 ## Architecture
 
 See [Architecture](docs/architecture.md) for component responsibilities,

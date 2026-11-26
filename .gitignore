@@ -4,3 +4,6 @@
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Benchmark dataset, downloaded by benchmark/run.sh
+benchmark/data/

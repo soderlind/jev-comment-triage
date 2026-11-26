@@ -4,6 +4,7 @@
 
 	<file>jev-comment-triage.php</file>
 	<file>uninstall.php</file>
+	<file>benchmark</file>
 	<file>bin</file>
 	<file>includes</file>
 	<file>tests</file>

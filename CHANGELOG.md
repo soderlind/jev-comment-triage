@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- `benchmark/`: a head-to-head benchmark of Jev against Akismet on spam
+  detection, with the results, a run script, and per-comment output. It uses
+  the fixtures and the public UCI YouTube Spam Collection.
+
 ## [2.3.0] - 2026-11-24
 
 ### Added
