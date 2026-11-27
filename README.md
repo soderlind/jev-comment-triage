@@ -150,6 +150,32 @@ suggested privacy-policy snippet under **Settings → Privacy**.
 
 ## Benchmark
 
+How Jev compares with the AI plugin's Comment Moderation and with Akismet. The
+figures come from separate runs, described below and in
+[`benchmark/`](benchmark/README.md). A dash means the comparison was not run,
+or does not apply.
+
+| | Jev | AI plugin (OpenAI) | Akismet |
+| - | --- | ------------------ | ------- |
+| What it decides | publish, hold, or spam | hold or publish (toxicity and sentiment) | spam or not |
+| Fixtures routed as expected | **60 / 60** | 24 / 60 | — (spam only) |
+| Fixtures kept from publishing (should be) | **42 / 42** | 9 / 42 | 2 / 14 |
+| Fixture spam caught | **6 / 6** | — (no spam route) | 2 / 6 |
+| YouTube spam caught (of 100) | **52** (84 with a spam threshold of 0.5) | — | 2 |
+| Good comments held or sent to spam | 0 | 0 | 0 |
+| Requests | 1 per 20 comments | 1 per comment | 1 per comment |
+| Time per comment | **10–13 ms** | 2,118 ms | 180 ms |
+
+Fixture figures use the 20 labelled comments in `bin/fixtures.php`, which
+were written alongside Jev. The Jev and AI plugin comparison ran them three
+times (60 comments). The Akismet comparison ran them once (20 comments). The
+YouTube figures use 200 comments (100 spam) from a public dataset that neither
+engine was tuned on. In this setup Akismet gets no real visitor IP, browser,
+or site history, so it was judged on the comment text alone. See
+[`benchmark/`](benchmark/README.md) for the limitations.
+
+### Jev's production path
+
 Reproducible via the tracked harness, which drives the real production path
 (`wp_new_comment()` → `defer()` → `enqueue()` → `drain()` → `process_comments()`):
 
