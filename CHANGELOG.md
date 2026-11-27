@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format is based on
   detection, with the results, a run script, and per-comment output. It uses
   the fixtures and the public UCI YouTube Spam Collection.
 
+### Changed
+
+- The README keeps a summary of the benchmarks. The detailed results for all
+  three are now in `benchmark/README.md`.
+
 ## [2.3.0] - 2026-11-24
 
 ### Added

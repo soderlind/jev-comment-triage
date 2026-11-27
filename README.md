@@ -11,10 +11,11 @@ The Jev call runs **asynchronously**, off the comment-submit request, so
 commenting stays fast even though moderation calls a remote API.
 
 On the same 60 labelled comments, Jev routed **60 / 60** correctly, while the
-AI plugin's Comment Moderation with OpenAI `gpt-5.6-luna` routed 24 / 60 and
-published 33 it should not have. Jev was also about 165× faster per comment
-(12.7 ms vs 2,118 ms). See
-[Jev vs the AI plugin's Comment Moderation](#jev-vs-the-ai-plugins-comment-moderation-openai).
+AI plugin's Comment Moderation with OpenAI `gpt-5.6-luna` routed 24 / 60, and
+Jev was about 165× faster per comment. On 100 spam comments from a public
+dataset, Jev caught 52 and Akismet caught 2. See the [benchmark](#benchmark).
+
+[Requirements](#requirements) · [Installation](#installation) · [How it works](#how-it-works) · [What Jev is asked](#what-jev-is-asked) · [Decision logic](#decision-logic) · [Fewer calls](#fewer-calls-when-the-answer-is-known) · [Hooks](#hooks) · [Privacy](#privacy) · [Benchmark](#benchmark) · [Architecture](#architecture)
 
 ## Requirements
 
@@ -58,6 +59,10 @@ published 33 it should not have. Jev was also about 165× faster per comment
 The answers and decision are stored as the `_jev_triage` comment meta and shown
 in a **Jev** column on the admin Comments screen.
 
+> **WP-Cron note:** the drain relies on WP-Cron. On low-traffic sites, add a
+> real system cron calling `wp-cron.php` (and set `DISABLE_WP_CRON`) so the
+> backlog is processed promptly.
+
 ### Coexisting with the AI plugin's Comment Moderation
 
 If the [AI plugin](https://github.com/WordPress/ai)'s
@@ -67,11 +72,11 @@ provider is configured, each regular comment Jev holds on submit is removed
 from the experiment's `wpai_comment_moderation_comment_types` list, so it never
 calls the `ai/comment-analysis` ability for that comment and never changes its
 status. Comments created directly with `wp_insert_comment()` bypass Jev's intake,
-so the experiment still moderates those. That avoids a second, synchronous AI request on every submit and conflicting
-decisions. The experiment's manual **Analyze** row and bulk actions, its
+so the experiment still moderates those. That avoids a second, synchronous AI
+request on every submit and conflicting decisions. The experiment's manual **Analyze** row and bulk actions, its
 columns, and other comment types it is filtered to moderate are untouched.
 Return `false` from `jct_override_ai_moderation` to let both run. For how the
-two compare, see the [benchmark](#jev-vs-the-ai-plugins-comment-moderation-openai).
+two compare, see the [benchmark](benchmark/README.md#jev-vs-the-ai-plugins-comment-moderation-openai).
 
 ## What Jev is asked
 
@@ -151,7 +156,7 @@ suggested privacy-policy snippet under **Settings → Privacy**.
 ## Benchmark
 
 How Jev compares with the AI plugin's Comment Moderation and with Akismet. The
-figures come from separate runs, described below and in
+figures come from separate runs, described in
 [`benchmark/`](benchmark/README.md). A dash means the comparison was not run,
 or does not apply.
 
@@ -172,106 +177,17 @@ times (60 comments). The Akismet comparison ran them once (20 comments). The
 YouTube figures use 200 comments (100 spam) from a public dataset that neither
 engine was tuned on. In this setup Akismet gets no real visitor IP, browser,
 or site history, so it was judged on the comment text alone. See
-[`benchmark/`](benchmark/README.md) for the limitations.
+[`benchmark/`](benchmark/README.md) for the full results, method, and
+limitations.
 
-### Jev's production path
+Each benchmark is a WP-CLI script that calls the live services. Run it from the
+WordPress root:
 
-Reproducible via the tracked harness, which drives the real production path
-(`wp_new_comment()` → `defer()` → `enqueue()` → `drain()` → `process_comments()`):
-
-```sh
-wp eval-file wp-content/plugins/jev-comment-triage/bin/benchmark.php repeat=3 --url=https://example.com
-```
-
-It creates a fixture post, submits 20 labelled comments per round, drains the
-queue against the live Jev API, compares each comment's route with the route it
-should get, and removes everything it created. Flags: `keep` retains the
-fixtures, `hold-policy` keeps the site's `comment_moderation` policy, and
-`spam-cache` turns the cache on. To reach the publish path it relaxes
-`comment_moderation` for its own process only, so the stored setting and other
-visitors are never affected, and it cleans up even when it exits early.
-
-The fixtures include the hard cases: an abusive comment about the post, a
-threat, promotion and phishing that mention the post, a prompt-injection
-attempt, a legitimate documentation link, a Norwegian comment, and civil
-criticism.
-
-Run below: 60 comments (3 × 20 fixtures), `jev-latest`, default thresholds, on a
-Local multisite subsite.
-
-| Metric | Result |
-| ------ | ------ |
-| Submission latency (what the commenter waits for, no API call) | mean **4.6 ms**, p95 7.4 ms |
-| Jev requests | 3, each with 20 comments (60 questions); mean **338 ms**, max 379 ms |
-| Drain throughput | 60 comments in 1.21 s — **49.5 comments/s**, 17 ms of API time per comment |
-| Input tokens | 514 per comment |
-| Routed as expected | **60 / 60** |
-| Published but should not be | **0** |
-| Good comments sent to spam | 0 |
-
-For comparison, the previous design (one Choice question, one request per
-comment) drained 3.25 comments/s on the same site and held abusive or
-threatening comments only when its confidence happened to fall below the
-threshold.
-
-Each round posts to its own fixture post, so rounds 2 and 3 replay round 1's
-exact submissions on other posts. In shadow mode the cache would have answered
-8 of those replays, and Jev — judging them on a different post — agreed with
-all 8. With `spam-cache` enabled, those replays skipped Jev and routing stayed
-60 / 60.
-
-> **WP-Cron note:** the drain relies on WP-Cron. On low-traffic sites, add a
-> real system cron calling `wp-cron.php` (and set `DISABLE_WP_CRON`) so the
-> backlog is processed promptly.
-
-### Jev vs the AI plugin's Comment Moderation (OpenAI)
-
-A second harness sends the same fixtures, on the same post, to Jev and to the
-[AI plugin](https://github.com/WordPress/ai)'s `ai/comment-analysis` (here
-backed by OpenAI), and scores both against the expected routes. Nothing
-changes comment status, and the fixtures are removed afterwards.
-
-```sh
-wp eval-file wp-content/plugins/jev-comment-triage/bin/compare.php repeat=3 --url=https://example.com
-```
-
-Each engine runs the way its plugin does in production: Jev answers up to 20
-comments per request; the AI plugin makes one request per comment. The AI
-plugin is routed by its default rule (hold when toxicity ≥ 0.7 *and* sentiment
-is negative); it has no spam route. "AI + low-value hold" also holds comments
-in the plugin's own *Low value* band (< 0.4). That is not something the plugin
-does, but it shows the best case for its scores.
-
-Run below: 60 comments (3 × 20 fixtures), `jev-latest` vs OpenAI `gpt-5.6-luna`,
-on a Local multisite subsite.
-
-| Metric | Jev | AI plugin (default) | AI + low-value hold |
-| ------ | --- | ------------------- | ------------------- |
-| Routed as expected | **60 / 60** | 24 / 60 | 42 / 60 |
-| Kept from publishing (of 42 that should be) | **42 / 42** | 9 / 42 | 41 / 42 |
-| Published but should not be | **0** | 33 | 1 |
-| Good comments held or sent to spam | 0 / 18 | 0 / 18 | 0 / 18 |
-| Requests | 3 | 60 | 60 |
-| Request latency (mean / p95) | 254 / 306 ms | 2,095 / 2,756 ms | same |
-| Time per comment | **12.7 ms** | 2,118 ms | same |
-| Tokens in / out per comment | 510 / 83 | 638 / 63 | same |
-
-The default AI rule only catches comments that are both toxic and negative, so
-spam, promotion, phishing, prompt injection, off-topic, and junk comments
-all pass. Promotion and prompt injection score as non-toxic and neutral or
-positive. Its value score does separate them, but nothing in the plugin acts
-on it, and it still cannot tell spam from off-topic. Jev routed every comment
-correctly and was about 165× faster per comment, because it batches.
-
-### Jev vs Akismet
-
-[`benchmark/`](benchmark/README.md) compares Jev with
-[Akismet](https://wordpress.org/plugins/akismet/) on spam detection. It uses
-the fixtures and a balanced sample from the public YouTube Spam Collection.
-On 200 YouTube comments, Jev caught 52 of 100 spam comments at its default
-threshold, and Akismet caught 2. Neither engine flagged a legitimate comment
-as spam. See the benchmark README for the method, limitations, and how to run
-it.
+| Benchmark | Command |
+| --------- | ------- |
+| Jev's production path | `wp eval-file wp-content/plugins/jev-comment-triage/bin/benchmark.php repeat=3 --url=<site-url>` |
+| Jev vs the AI plugin | `wp eval-file wp-content/plugins/jev-comment-triage/bin/compare.php repeat=3 --url=<site-url>` |
+| Jev vs Akismet | `wp-content/plugins/jev-comment-triage/benchmark/run.sh <site-url>` |
 
 ## Architecture
 
