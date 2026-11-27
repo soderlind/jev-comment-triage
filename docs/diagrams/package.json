@@ -1,0 +1,12 @@
+{
+  "name": "jev-comment-triage-diagrams",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "@coldtea/pr-lens-renderer": "0.6.3",
+    "@coldtea/pr-lens-schema": "0.10.0"
+  }
+}

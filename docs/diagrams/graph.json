@@ -1,0 +1,531 @@
+{
+  "schemaVersion": "0.3.1",
+  "kind": "graph",
+  "id": "jev-comment-triage-current",
+  "title": "Jev Comment Triage: current operation",
+  "summary": "How eligible comments are deferred, assessed asynchronously, and routed without overriding WordPress moderation.",
+  "lenses": ["architecture", "data-flow"],
+  "provenance": {
+    "repo": {
+      "owner": "soderlind",
+      "name": "jev-comment-triage",
+      "host": "github.com"
+    },
+    "base": {
+      "sha": "f387f158148e3451082021c601fc88b84411137a",
+      "ref": "main"
+    },
+    "head": {
+      "sha": "f387f158148e3451082021c601fc88b84411137a",
+      "ref": "main"
+    }
+  },
+  "lanes": [
+    { "id": "people", "label": "People", "order": 0 },
+    { "id": "wordpress", "label": "WordPress", "order": 1 },
+    { "id": "triage", "label": "Jev triage plugin", "order": 2 },
+    { "id": "provider", "label": "Provider plugin", "order": 3 },
+    { "id": "remote", "label": "External service", "order": 4 },
+    { "id": "outcomes", "label": "WordPress outcomes", "order": 5 }
+  ],
+  "nodes": [
+    {
+      "id": "author", "label": "Comment author", "kind": "ui", "delta": "unchanged",
+      "lane": "people", "files": [{ "path": "README.md", "startLine": 35 }]
+    },
+    {
+      "id": "comments", "label": "WordPress comments", "kind": "service", "delta": "unchanged",
+      "lane": "wordpress", "subtitle": "status + comment meta",
+      "files": [{ "path": "includes/intake.php", "startLine": 133 }, { "path": "includes/processor.php", "startLine": 173 }]
+    },
+    {
+      "id": "cron", "label": "WP-Cron", "kind": "job", "delta": "unchanged",
+      "lane": "wordpress", "subtitle": "recurring + nudge",
+      "files": [{ "path": "includes/intake.php", "startLine": 147 }, { "path": "includes/scheduler.php", "startLine": 18 }]
+    },
+    {
+      "id": "cache", "label": "Spam cache", "kind": "cache", "delta": "unchanged",
+      "lane": "wordpress", "subtitle": "shadow by default",
+      "files": [{ "path": "includes/spam-cache.php", "startLine": 17 }, { "path": "includes/processor.php", "startLine": 110 }]
+    },
+    {
+      "id": "intake", "label": "Intake", "kind": "module", "delta": "unchanged",
+      "lane": "triage", "subtitle": "defer / enqueue",
+      "files": [{ "path": "includes/intake.php", "startLine": 65 }, { "path": "includes/intake.php", "startLine": 133 }]
+    },
+    {
+      "id": "drain", "label": "Queue drain", "kind": "job", "delta": "unchanged",
+      "lane": "triage", "subtitle": "oldest held first", "badges": ["best-effort lock"],
+      "files": [{ "path": "includes/scheduler.php", "startLine": 46 }]
+    },
+    {
+      "id": "processor", "label": "Processor", "kind": "module", "delta": "unchanged",
+      "lane": "triage", "subtitle": "group by post",
+      "files": [{ "path": "includes/processor.php", "startLine": 27 }]
+    },
+    {
+      "id": "assessment", "label": "Assessment", "kind": "module", "delta": "unchanged",
+      "lane": "triage", "subtitle": "3 typed questions",
+      "files": [{ "path": "includes/class-assessment.php", "startLine": 46 }, { "path": "includes/class-assessment.php", "startLine": 117 }]
+    },
+    {
+      "id": "policy", "label": "Decision policy", "kind": "module", "delta": "unchanged",
+      "lane": "triage", "subtitle": "default thresholds",
+      "files": [{ "path": "includes/policy.php", "startLine": 42 }, { "path": "jev-comment-triage.php", "startLine": 34 }]
+    },
+    {
+      "id": "base", "label": "Base decision", "kind": "other", "delta": "unchanged",
+      "lane": "outcomes", "subtitle": "WordPress decision",
+      "files": [{ "path": "includes/intake.php", "startLine": 78 }, { "path": "includes/policy.php", "startLine": 59 }]
+    },
+    {
+      "id": "spam", "label": "Spam", "kind": "other", "delta": "unchanged",
+      "lane": "outcomes", "files": [{ "path": "includes/policy.php", "startLine": 47 }]
+    },
+    {
+      "id": "held", "label": "Held", "kind": "other", "delta": "unchanged",
+      "lane": "outcomes", "files": [{ "path": "includes/policy.php", "startLine": 51 }, { "path": "includes/policy.php", "startLine": 63 }]
+    },
+    {
+      "id": "approved", "label": "Approved", "kind": "other", "delta": "unchanged",
+      "lane": "outcomes", "files": [{ "path": "includes/processor.php", "startLine": 215 }]
+    },
+    {
+      "id": "jev-provider", "label": "Jev provider", "kind": "external", "delta": "unchanged",
+      "lane": "provider", "subtitle": "AI Provider for Jev",
+      "files": [{ "path": "includes/processor.php", "startLine": 29 }, { "path": "README.md", "startLine": 24 }]
+    },
+    {
+      "id": "jev-api", "label": "TypeSafe Jev", "kind": "external", "delta": "unchanged",
+      "lane": "remote", "subtitle": "external model",
+      "files": [{ "path": "includes/admin.php", "startLine": 100 }]
+    }
+  ],
+  "edges": [
+    {
+      "id": "author-comments", "from": "author", "to": "comments", "kind": "event",
+      "delta": "unchanged", "label": "submit", "files": [{ "path": "README.md", "startLine": 35 }]
+    },
+    {
+      "id": "comments-intake", "from": "comments", "to": "intake", "kind": "event",
+      "delta": "unchanged", "label": "comment hooks", "files": [{ "path": "jev-comment-triage.php", "startLine": 82 }]
+    },
+    {
+      "id": "intake-comments", "from": "intake", "to": "comments", "kind": "data",
+      "delta": "unchanged", "label": "hold + queue meta", "files": [{ "path": "includes/intake.php", "startLine": 65 }, { "path": "includes/intake.php", "startLine": 133 }]
+    },
+    {
+      "id": "intake-cron", "from": "intake", "to": "cron", "kind": "event",
+      "delta": "unchanged", "label": "schedule + nudge", "files": [{ "path": "includes/intake.php", "startLine": 147 }]
+    },
+    {
+      "id": "cron-drain", "from": "cron", "to": "drain", "kind": "event",
+      "delta": "unchanged", "label": "jct_drain", "files": [{ "path": "jev-comment-triage.php", "startLine": 86 }]
+    },
+    {
+      "id": "drain-processor", "from": "drain", "to": "processor", "kind": "call",
+      "delta": "unchanged", "label": "bounded batch", "files": [{ "path": "includes/scheduler.php", "startLine": 56 }]
+    },
+    {
+      "id": "processor-assessment", "from": "processor", "to": "assessment", "kind": "call",
+      "delta": "unchanged", "label": "batch by post", "files": [{ "path": "includes/processor.php", "startLine": 27 }, { "path": "includes/processor.php", "startLine": 135 }]
+    },
+    {
+      "id": "assessment-provider", "from": "assessment", "to": "jev-provider", "kind": "call",
+      "delta": "unchanged", "label": "evaluate()", "files": [{ "path": "includes/processor.php", "startLine": 29 }, { "path": "includes/class-assessment.php", "startLine": 95 }]
+    },
+    {
+      "id": "provider-api", "from": "jev-provider", "to": "jev-api", "kind": "http",
+      "delta": "unchanged", "label": "HTTP request", "files": [{ "path": "docs/architecture.md", "startLine": 55 }]
+    },
+    {
+      "id": "processor-cache", "from": "processor", "to": "cache", "kind": "data",
+      "delta": "unchanged", "label": "look up / store", "files": [{ "path": "includes/processor.php", "startLine": 110 }, { "path": "includes/processor.php", "startLine": 149 }]
+    },
+    {
+      "id": "processor-comments", "from": "processor", "to": "comments", "kind": "data",
+      "delta": "unchanged", "label": "store result + status", "files": [{ "path": "includes/processor.php", "startLine": 173 }]
+    },
+    {
+      "id": "assessment-processor", "from": "assessment", "to": "processor", "kind": "data",
+      "delta": "unchanged", "label": "validated assessment", "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+    },
+    {
+      "id": "processor-policy", "from": "processor", "to": "policy", "kind": "call",
+      "delta": "unchanged", "label": "decide with base", "files": [{ "path": "includes/processor.php", "startLine": 173 }]
+    },
+    {
+      "id": "policy-spam", "from": "policy", "to": "spam", "kind": "data",
+      "delta": "unchanged", "label": "1. spam >= 0.90", "files": [{ "path": "includes/policy.php", "startLine": 47 }, { "path": "jev-comment-triage.php", "startLine": 34 }]
+    },
+    {
+      "id": "policy-held", "from": "policy", "to": "held", "kind": "data",
+      "delta": "unchanged", "label": "2. abuse >= 0.50 / 4. other", "files": [{ "path": "includes/policy.php", "startLine": 51 }, { "path": "includes/policy.php", "startLine": 63 }]
+    },
+    {
+      "id": "policy-base", "from": "policy", "to": "base", "kind": "data",
+      "delta": "unchanged", "label": "3. on-topic confidence >= 0.80; spam/abuse < 0.20", "files": [{ "path": "includes/policy.php", "startLine": 55 }, { "path": "jev-comment-triage.php", "startLine": 34 }]
+    },
+    {
+      "id": "base-approved", "from": "base", "to": "approved", "kind": "data",
+      "delta": "unchanged", "label": "WordPress approved", "files": [{ "path": "includes/intake.php", "startLine": 78 }, { "path": "includes/processor.php", "startLine": 212 }]
+    },
+    {
+      "id": "base-held", "from": "base", "to": "held", "kind": "data",
+      "delta": "unchanged", "label": "WordPress held", "files": [{ "path": "includes/intake.php", "startLine": 78 }, { "path": "includes/processor.php", "startLine": 212 }]
+    }
+  ],
+  "flows": [
+    {
+      "id": "eligible-submission",
+      "title": "Eligible comment submission",
+      "summary": "An eligible comment is held and queued; the submission request makes no Jev call.",
+      "delta": "unchanged",
+      "participants": [
+        { "node": "author", "label": "Author" },
+        { "node": "comments", "label": "WordPress" },
+        { "node": "intake", "label": "Intake" },
+        { "node": "cron", "label": "WP-Cron" }
+      ],
+      "messages": [
+        {
+          "id": "submit", "from": "author", "to": "comments", "kind": "sync",
+          "label": "submit eligible comment", "delta": "unchanged",
+          "files": [{ "path": "README.md", "startLine": 37 }]
+        },
+        {
+          "id": "pre-approval", "from": "comments", "to": "intake", "kind": "sync",
+          "label": "pre_comment_approved", "delta": "unchanged",
+          "files": [{ "path": "jev-comment-triage.php", "startLine": 82 }]
+        },
+        {
+          "id": "remember-base", "from": "intake", "to": "intake", "kind": "self",
+          "label": "remember base decision", "delta": "unchanged",
+          "files": [{ "path": "includes/intake.php", "startLine": 78 }]
+        },
+        {
+          "id": "hold", "from": "intake", "to": "comments", "kind": "return",
+          "label": "return hold (0)", "delta": "unchanged",
+          "files": [{ "path": "includes/intake.php", "startLine": 88 }]
+        },
+        {
+          "id": "insert", "from": "comments", "to": "comments", "kind": "self",
+          "label": "store held comment", "delta": "unchanged",
+          "files": [{ "path": "docs/architecture.md", "startLine": 233 }]
+        },
+        {
+          "id": "post-hook", "from": "comments", "to": "intake", "kind": "sync",
+          "label": "comment_post", "delta": "unchanged",
+          "files": [{ "path": "jev-comment-triage.php", "startLine": 83 }]
+        },
+        {
+          "id": "queue-meta", "from": "intake", "to": "comments", "kind": "sync",
+          "label": "write pending + base", "delta": "unchanged",
+          "files": [{ "path": "includes/intake.php", "startLine": 145 }]
+        },
+        {
+          "id": "schedule", "from": "intake", "to": "cron", "kind": "async",
+          "label": "schedule + nudge drain", "delta": "unchanged",
+          "files": [{ "path": "includes/intake.php", "startLine": 147 }]
+        },
+        {
+          "id": "enqueue-return", "from": "intake", "to": "comments", "kind": "return",
+          "label": "enqueue returns", "delta": "unchanged",
+          "files": [{ "path": "includes/intake.php", "startLine": 133 }]
+        },
+        {
+          "id": "submit-return", "from": "comments", "to": "author", "kind": "return",
+          "label": "submission completes", "delta": "unchanged",
+          "files": [{ "path": "README.md", "startLine": 37 }]
+        }
+      ]
+    },
+    {
+      "id": "successful-assessment",
+      "title": "Background assessment succeeds",
+      "summary": "The normal Jev path, when no rule or enabled cache hit takes a shortcut.",
+      "delta": "unchanged",
+      "participants": [
+        { "node": "drain", "label": "Drain" },
+        { "node": "comments", "label": "WordPress" },
+        { "node": "processor", "label": "Processor" },
+        { "node": "assessment", "label": "Assessment" },
+        { "node": "jev-provider", "label": "Provider" },
+        { "node": "jev-api", "label": "Jev API" }
+      ],
+      "messages": [
+        {
+          "id": "select", "from": "drain", "to": "comments", "kind": "sync",
+          "label": "select held + pending", "delta": "unchanged",
+          "files": [{ "path": "includes/scheduler.php", "startLine": 56 }]
+        },
+        {
+          "id": "selected", "from": "comments", "to": "drain", "kind": "return",
+          "label": "up to 20 by default", "delta": "unchanged",
+          "files": [{ "path": "includes/scheduler.php", "startLine": 54 }]
+        },
+        {
+          "id": "process", "from": "drain", "to": "processor", "kind": "sync",
+          "label": "process selected batch", "delta": "unchanged",
+          "files": [{ "path": "includes/scheduler.php", "startLine": 76 }]
+        },
+        {
+          "id": "group", "from": "processor", "to": "processor", "kind": "self",
+          "label": "group + chunk by post", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 33 }]
+        },
+        {
+          "id": "read-context", "from": "processor", "to": "comments", "kind": "sync",
+          "label": "read post + base", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 47 }, { "path": "includes/processor.php", "startLine": 78 }]
+        },
+        {
+          "id": "context", "from": "comments", "to": "processor", "kind": "return",
+          "label": "post + base decision", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 47 }, { "path": "includes/processor.php", "startLine": 78 }]
+        },
+        {
+          "id": "ask", "from": "processor", "to": "assessment", "kind": "sync",
+          "label": "Jev path: remaining comments", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 129 }]
+        },
+        {
+          "id": "evaluate", "from": "assessment", "to": "jev-provider", "kind": "sync",
+          "label": "post + 3 questions/comment", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 73 }, { "path": "includes/class-assessment.php", "startLine": 117 }]
+        },
+        {
+          "id": "http", "from": "jev-provider", "to": "jev-api", "kind": "sync",
+          "label": "POST /systemone", "delta": "unchanged",
+          "files": [{ "path": "docs/architecture.md", "startLine": 55 }]
+        },
+        {
+          "id": "http-answers", "from": "jev-api", "to": "jev-provider", "kind": "return",
+          "label": "typed answers", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 100 }]
+        },
+        {
+          "id": "provider-answers", "from": "jev-provider", "to": "assessment", "kind": "return",
+          "label": "response", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 95 }]
+        },
+        {
+          "id": "validated", "from": "assessment", "to": "processor", "kind": "return",
+          "label": "validated assessments", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 155 }]
+        },
+        {
+          "id": "decide", "from": "processor", "to": "processor", "kind": "self",
+          "label": "apply policy + base", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 174 }]
+        },
+        {
+          "id": "persist", "from": "processor", "to": "comments", "kind": "sync",
+          "label": "store result + status", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 173 }]
+        }
+      ]
+    },
+    {
+      "id": "outage-retries",
+      "title": "Retries after provider outages",
+      "summary": "First and third failures are shown; the second also stays pending for a later drain.",
+      "delta": "unchanged",
+      "participants": [
+        { "node": "drain", "label": "Drain" },
+        { "node": "processor", "label": "Processor" },
+        { "node": "assessment", "label": "Assessment" },
+        { "node": "jev-provider", "label": "Provider" },
+        { "node": "comments", "label": "WordPress" }
+      ],
+      "messages": [
+        {
+          "id": "first-attempt", "from": "drain", "to": "processor", "kind": "sync",
+          "label": "pending comment: attempt 1", "delta": "unchanged",
+          "files": [{ "path": "includes/scheduler.php", "startLine": 56 }]
+        },
+        {
+          "id": "first-assess", "from": "processor", "to": "assessment", "kind": "sync",
+          "label": "assess", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+        },
+        {
+          "id": "first-request", "from": "assessment", "to": "jev-provider", "kind": "sync",
+          "label": "evaluate", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 95 }]
+        },
+        {
+          "id": "first-error", "from": "jev-provider", "to": "assessment", "kind": "return",
+          "label": "outage / timeout", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 97 }]
+        },
+        {
+          "id": "first-failure", "from": "assessment", "to": "processor", "kind": "return",
+          "label": "failure; no body split", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 57 }]
+        },
+        {
+          "id": "keep-pending", "from": "processor", "to": "comments", "kind": "sync",
+          "label": "save attempt 1; keep pending", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 198 }]
+        },
+        {
+          "id": "first-saved", "from": "comments", "to": "processor", "kind": "return",
+          "label": "write returns (unchecked)", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 199 }]
+        },
+        {
+          "id": "first-tick-ends", "from": "processor", "to": "drain", "kind": "return",
+          "label": "tick completes", "delta": "unchanged",
+          "files": [{ "path": "includes/scheduler.php", "startLine": 76 }]
+        },
+        {
+          "id": "third-attempt", "from": "drain", "to": "processor", "kind": "sync",
+          "label": "later: attempt 3 (2 omitted)", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 198 }]
+        },
+        {
+          "id": "third-assess", "from": "processor", "to": "assessment", "kind": "sync",
+          "label": "assess again", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+        },
+        {
+          "id": "third-request", "from": "assessment", "to": "jev-provider", "kind": "sync",
+          "label": "evaluate", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 95 }]
+        },
+        {
+          "id": "third-error", "from": "jev-provider", "to": "assessment", "kind": "return",
+          "label": "outage / timeout", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 97 }]
+        },
+        {
+          "id": "third-failure", "from": "assessment", "to": "processor", "kind": "return",
+          "label": "failure", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 57 }]
+        },
+        {
+          "id": "abandon", "from": "processor", "to": "comments", "kind": "sync",
+          "label": "attempt 3: remove pending; hold", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 198 }, { "path": "jev-comment-triage.php", "startLine": 29 }]
+        },
+        {
+          "id": "third-saved", "from": "comments", "to": "processor", "kind": "return",
+          "label": "write returns (unchecked)", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 199 }]
+        },
+        {
+          "id": "third-tick-ends", "from": "processor", "to": "drain", "kind": "return",
+          "label": "tick completes", "delta": "unchanged",
+          "files": [{ "path": "includes/scheduler.php", "startLine": 76 }]
+        }
+      ]
+    },
+    {
+      "id": "body-rejection",
+      "title": "Rejected request is split",
+      "summary": "Example: a two-comment request is rejected, the first succeeds alone, and the second is rejected alone.",
+      "delta": "unchanged",
+      "participants": [
+        { "node": "processor", "label": "Processor" },
+        { "node": "assessment", "label": "Assessment" },
+        { "node": "jev-provider", "label": "Provider" }
+      ],
+      "messages": [
+        {
+          "id": "two-comments", "from": "processor", "to": "assessment", "kind": "sync",
+          "label": "assess 2 comments", "delta": "unchanged",
+          "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+        },
+        {
+          "id": "both-request", "from": "assessment", "to": "jev-provider", "kind": "sync",
+          "label": "evaluate both", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 49 }]
+        },
+        {
+          "id": "both-rejected", "from": "jev-provider", "to": "assessment", "kind": "return",
+          "label": "HTTP 422", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 213 }]
+        },
+        {
+          "id": "split", "from": "assessment", "to": "assessment", "kind": "self",
+          "label": "split into single comments", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 61 }]
+        },
+        {
+          "id": "first-single", "from": "assessment", "to": "jev-provider", "kind": "sync",
+          "label": "evaluate first", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 63 }]
+        },
+        {
+          "id": "first-valid", "from": "jev-provider", "to": "assessment", "kind": "return",
+          "label": "valid answers", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 155 }]
+        },
+        {
+          "id": "second-single", "from": "assessment", "to": "jev-provider", "kind": "sync",
+          "label": "evaluate second", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 63 }]
+        },
+        {
+          "id": "second-rejected", "from": "jev-provider", "to": "assessment", "kind": "return",
+          "label": "HTTP 422", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 58 }]
+        },
+        {
+          "id": "isolated-results", "from": "assessment", "to": "processor", "kind": "return",
+          "label": "first result + second error", "delta": "unchanged",
+          "files": [{ "path": "includes/class-assessment.php", "startLine": 63 }]
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "system-overview",
+      "title": "System overview",
+      "lens": "architecture",
+      "summary": "How WordPress, triage, the provider, and Jev interact.",
+      "scope": {
+        "kind": "selection",
+        "nodes": ["comments", "cron", "cache", "intake", "drain", "processor", "assessment", "jev-provider", "jev-api"],
+        "edges": ["comments-intake", "intake-comments", "intake-cron", "cron-drain", "drain-processor", "processor-assessment", "assessment-provider", "provider-api", "processor-cache", "processor-comments"]
+      }
+    },
+    {
+      "id": "decision-policy",
+      "title": "Decision policy",
+      "lens": "architecture",
+      "summary": "Default thresholds; the base decision limits publication.",
+      "scope": {
+        "kind": "selection",
+        "nodes": ["assessment", "processor", "policy", "base", "spam", "held", "approved"],
+        "edges": ["assessment-processor", "processor-policy", "policy-spam", "policy-held", "policy-base", "base-approved", "base-held"]
+      }
+    },
+    {
+      "id": "submit-comment",
+      "title": "Eligible comment submission",
+      "lens": "data-flow",
+      "scope": { "kind": "selection", "flows": ["eligible-submission"] }
+    },
+    {
+      "id": "background-success",
+      "title": "Background assessment succeeds",
+      "lens": "data-flow",
+      "scope": { "kind": "selection", "flows": ["successful-assessment"] }
+    },
+    {
+      "id": "outage-retry",
+      "title": "Retries after provider outages",
+      "lens": "data-flow",
+      "scope": { "kind": "selection", "flows": ["outage-retries"] }
+    },
+    {
+      "id": "split-rejected-request",
+      "title": "Rejected request is split",
+      "lens": "data-flow",
+      "scope": { "kind": "selection", "flows": ["body-rejection"] }
+    }
+  ]
+}

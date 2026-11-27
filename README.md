@@ -53,8 +53,8 @@ dataset, Jev caught 52 and Akismet caught 2. See the [benchmark](#benchmark).
    one comment is too large), the request is split in half and retried until
    the offending comment is isolated, so the others are still judged. Outages,
    timeouts, auth or configuration errors, and rate limits leave the whole
-   chunk pending without splitting. Comments are never publicly visible before
-   triage, and a lock prevents concurrent drains from double-processing.
+   chunk pending without splitting. Comments are held before triage. The drain's
+   best-effort lock reduces overlap but does not prevent concurrent processing.
 
 The answers and decision are stored as the `_jev_triage` comment meta and shown
 in a **Jev** column on the admin Comments screen.
@@ -193,7 +193,7 @@ WordPress root:
 
 See [Architecture](docs/architecture.md) for component responsibilities,
 comment lifecycle states, execution flows, invariants, boundaries, and change
-locations.
+locations, and the [illustrated flows](docs/diagrams/source-map.md) for diagrams.
 
 ## License
 

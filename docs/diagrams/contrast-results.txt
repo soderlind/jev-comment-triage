@@ -1,0 +1,48 @@
+
+light
+ok    7.34:1  (min 4.5)  text: node title on card
+ok    4.91:1  (min 4.5)  text: node title on faded context card (0.82)
+ok    7.59:1  (min 4.5)  text: node subtitle on card
+ok    5.09:1  (min 4.5)  text: node subtitle on faded context card (0.82)
+ok   12.81:1  (min 4.5)  text: edge label on its pill
+ok    5.15:1  (min 4.5)  text: lane label on lane
+ok    4.91:1  (min 4.5)  text: lane label on background
+ok    7.07:1  (min 4.5)  text: badge text on its fill
+ok    5.32:1  (min 4.5)  text: badge text on faded context card (0.82)
+ok    5.60:1  (min 4.5)  text: other muted text on background
+ok    5.75:1  (min 4.5)  diff: added badge text on its fill
+ok    5.45:1  (min 4.5)  diff: changed badge text on its fill
+ok    5.60:1  (min 4.5)  diff: removed badge text on its fill
+warn  2.72:1  (min 4.5)  diff: node title on removed (ghost) card (0.55)
+warn  2.79:1  (min 4.5)  diff: node subtitle on removed (ghost) card (0.55)
+ok    6.64:1  (min 3)  graphic: node icon on chip
+ok    4.59:1  (min 3)  graphic: node icon on faded context chip (0.82)
+ok    4.76:1  (min 3)  graphic: edge on background
+ok    4.99:1  (min 3)  graphic: edge on lane
+ok    4.17:1  (min 3)  graphic: lifeline on background
+info  1.31:1             decorative: card border on background
+
+dark
+ok    8.31:1  (min 4.5)  text: node title on card
+ok    6.03:1  (min 4.5)  text: node title on faded context card (0.82)
+ok    8.32:1  (min 4.5)  text: node subtitle on card
+ok    6.04:1  (min 4.5)  text: node subtitle on faded context card (0.82)
+ok   12.31:1  (min 4.5)  text: edge label on its pill
+ok    7.06:1  (min 4.5)  text: lane label on lane
+ok    7.51:1  (min 4.5)  text: lane label on background
+ok    6.81:1  (min 4.5)  text: badge text on its fill
+ok    5.16:1  (min 4.5)  text: badge text on faded context card (0.82)
+ok    6.50:1  (min 4.5)  text: other muted text on background
+ok    5.21:1  (min 4.5)  diff: added badge text on its fill
+ok    5.26:1  (min 4.5)  diff: changed badge text on its fill
+warn  4.23:1  (min 4.5)  diff: removed badge text on its fill
+warn  3.41:1  (min 4.5)  diff: node title on removed (ghost) card (0.55)
+warn  3.41:1  (min 4.5)  diff: node subtitle on removed (ghost) card (0.55)
+ok    6.84:1  (min 3)  graphic: node icon on chip
+ok    5.17:1  (min 3)  graphic: node icon on faded context chip (0.82)
+ok    7.49:1  (min 3)  graphic: edge on background
+ok    7.05:1  (min 3)  graphic: edge on lane
+ok    6.15:1  (min 3)  graphic: lifeline on background
+info  1.92:1             decorative: card border on background
+
+warn: change-diagram colours below the minimum; report them as a limitation.
