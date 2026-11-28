@@ -7,9 +7,9 @@
 Auto-moderate WordPress comments and [bbPress](#bbpress-forums) forum topics
 and replies with [TypeSafe](https://docs.typesafe.ai/introduction)'s
 **Jev** model, via the [AI Provider for Jev](https://github.com/soderlind/ai-provider-for-jev)
-plugin. For every comment Jev answers three independent questions in the
+plugin. **For every comment Jev answers three independent questions in the
 context of its post: how it relates to the post, whether it is spam, and
-whether it is abusive. Plain PHP turns those answers into a decision, and only
+whether it is abusive.** Plain PHP turns those answers into a decision, and only
 confident answers lead to an automatic action.
 
 The Jev call runs **asynchronously**, off the comment-submit request, so
