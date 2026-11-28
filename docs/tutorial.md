@@ -1,9 +1,14 @@
 # Using Jev in WordPress
 
 This tutorial shows how to use Jev to moderate WordPress comments, and bbPress
-topics and replies, with the Jev Comment Triage plugin. It follows TypeSafe's model: send state and several
-small, typed questions, then use the structured answers and their confidence
-in ordinary PHP code.
+topics and replies, with the Jev Comment Triage plugin. It follows TypeSafe's
+model: send state and several small, typed questions, then use the structured
+answers and their confidence in ordinary PHP code.
+
+> **What does "triage" mean?** To *triage* is to sort things into groups, so
+> the most important ones get attention first. Hospitals use the word for
+> sorting patients. This plugin sorts each new post into one of three groups:
+> spam, held for a moderator, or kept as WordPress decided.
 
 Jev is not a text-generation chatbot. It answers typed **Choice**, **Score**,
 and **Noul** questions. Jev Comment Triage uses one Choice question for
