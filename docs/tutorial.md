@@ -7,7 +7,7 @@ answers and their confidence in ordinary PHP code.
 
 > **What does "triage" mean?** To *triage* is to sort things into groups, so
 > the most important ones get attention first. Hospitals use the word for
-> sorting patients. This plugin sorts each new post into one of three groups:
+> sorting patients. This plugin sorts each new comment or forum topic into one of three groups:
 > spam, held for a moderator, or kept as WordPress decided.
 
 Jev is not a text-generation chatbot. It answers typed **Choice**, **Score**,
