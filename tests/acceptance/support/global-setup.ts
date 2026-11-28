@@ -19,6 +19,10 @@ export default async function globalSetup( _config: FullConfig ): Promise<void> 
 	cleanUp();
 
 	mkdirSync( AUTH_DIR, { recursive: true } );
+	// Save the original value before changing the site, so cleanup can restore it if setup fails partway.
+	const previousModeration = php<string>( `return (string) get_option( 'comment_moderation' );` );
+	writeFileSync( STATE_FILE, JSON.stringify( { previousModeration }, null, 2 ) );
+
 	copyFileSync( path.join( __dirname, 'harness.php' ), MU_PLUGIN );
 
 	const token = randomBytes( 4 ).toString( 'hex' );
@@ -29,9 +33,8 @@ export default async function globalSetup( _config: FullConfig ): Promise<void> 
 		Object.entries( passwords ).map( ( [ role, pass ] ) => [ `JCT_E2E_PASS_${ role.toUpperCase() }`, pass ] )
 	);
 
-	const site = php<Omit<SuiteState, 'token'>>(
+	const site = php<Omit<SuiteState, 'token' | 'previousModeration'>>(
 		`
-		$previous = (string) get_option( 'comment_moderation' );
 		update_option( 'comment_moderation', '0' );
 
 		$users = [];
@@ -79,12 +82,12 @@ export default async function globalSetup( _config: FullConfig ): Promise<void> 
 			throw new \\RuntimeException( $post->get_error_message() );
 		}
 
-		return [ 'users' => $users, 'forumId' => (int) $forum, 'postId' => (int) $post, 'previousModeration' => $previous ];
+		return [ 'users' => $users, 'forumId' => (int) $forum, 'postId' => (int) $post ];
 	`,
 		env
 	);
 
-	const state: SuiteState = { token, ...site };
+	const state: SuiteState = { token, previousModeration, ...site };
 	writeFileSync( STATE_FILE, JSON.stringify( state, null, 2 ) );
 
 	const browser = await chromium.launch();

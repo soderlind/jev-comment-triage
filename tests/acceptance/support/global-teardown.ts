@@ -10,6 +10,17 @@ export function cleanUp(): void {
 		? ( JSON.parse( readFileSync( STATE_FILE, 'utf8' ) ) as { previousModeration?: string } ).previousModeration
 		: undefined;
 
+	try {
+		removeSiteData( previous );
+		// Keep the saved state if the site cleanup fails, so the next run can retry it.
+		rmSync( AUTH_DIR, { recursive: true, force: true } );
+	} finally {
+		// The harness turns off flood checks and web drains, so never leave it behind.
+		rmSync( MU_PLUGIN, { force: true } );
+	}
+}
+
+function removeSiteData( previous: string | undefined ): void {
 	php( `
 		require_once ABSPATH . 'wp-admin/includes/ms.php';
 		require_once ABSPATH . 'wp-admin/includes/user.php';
@@ -34,9 +45,6 @@ export function cleanUp(): void {
 
 		return true;
 	` );
-
-	rmSync( MU_PLUGIN, { force: true } );
-	rmSync( AUTH_DIR, { recursive: true, force: true } );
 }
 
 export default async function globalTeardown(): Promise<void> {

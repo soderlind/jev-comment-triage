@@ -91,6 +91,24 @@ it(
 );
 
 it(
+	'does not let an edit that also approves release a held comment',
+	function (): void {
+		$this->meta = [ '_jev_triage' => [ 'decision' => '0' ] ];
+
+		hold_edited_comment(
+			edited_comment( 'Changed', '1' ),
+			[
+				'comment_content'  => 'Original',
+				'comment_approved' => '0',
+			]
+		);
+		queue_edited_comment( 7 );
+
+		expect( $this->meta['_jct_base'] )->toBe( '0' );
+	}
+);
+
+it(
 	'keeps the original base of a comment still waiting in the queue',
 	function (): void {
 		$this->meta = [

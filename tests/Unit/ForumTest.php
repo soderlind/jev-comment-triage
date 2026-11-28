@@ -27,6 +27,7 @@ beforeEach(
 		Functions\when( 'user_can' )->justReturn( false );
 		Functions\when( 'get_current_user_id' )->justReturn( 0 );
 		Functions\when( 'wp_next_scheduled' )->justReturn( true );
+		Functions\when( 'wp_unslash' )->alias( 'stripslashes' );
 
 		$this->meta = [];
 		Functions\when( 'get_post_meta' )->alias( fn( $id, $key ) => $this->meta[ $id ][ $key ] ?? '' );
@@ -127,6 +128,35 @@ it(
 		expect( $unchanged['post_status'] )->toBe( 'publish' )
 			->and( $changed['post_status'] )->toBe( 'pending' )
 			->and( $this->meta[11]['_jct_base'] )->toBe( '1' );
+	}
+);
+
+it(
+	'ignores an unchanged edit whose text bbPress passes slashed',
+	function (): void {
+		$title   = 'Don\'t "quote" C:\\path';
+		$content = 'It\'s fine';
+		Functions\when( 'get_post' )->justReturn(
+			new WP_Post(
+				[
+					'post_title'   => $title,
+					'post_content' => $content,
+				]
+			)
+		);
+
+		$data = hold_edited_forum_post(
+			[
+				'ID'           => 11,
+				'post_type'    => 'topic',
+				'post_status'  => 'publish',
+				'post_author'  => 0,
+				'post_title'   => addslashes( $title ),
+				'post_content' => addslashes( $content ),
+			]
+		);
+
+		expect( $data['post_status'] )->toBe( 'publish' )->and( $this->meta )->toBe( [] );
 	}
 );
 

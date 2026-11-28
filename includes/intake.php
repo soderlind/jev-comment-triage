@@ -246,8 +246,10 @@ function hold_edited_comment( $data, $comment = [] ) {
 		'id'   => $id,
 	];
 
+	// Approving in the same save must not release a comment that was held before it.
+	$was_approved                    = '1' === (string) ( ( (array) $comment )['comment_approved'] ?? $status );
 	$claims                          = &edit_registry();
-	$claims[ 'edit:comment:' . $id ] = retriage_base( $item, $status );
+	$claims[ 'edit:comment:' . $id ] = retriage_base( $item, $was_approved ? $status : '0' );
 	$data['comment_approved']        = 0;
 
 	return $data;

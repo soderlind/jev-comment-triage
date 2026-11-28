@@ -168,7 +168,10 @@ function hold_edited_forum_post( $data ) {
 		return $data;
 	}
 
-	if ( (string) ( $data['post_title'] ?? '' ) === (string) $old->post_title && (string) ( $data['post_content'] ?? '' ) === (string) $old->post_content ) {
+	// bbPress passes slashed data, ready for wp_update_post(); compare it unslashed.
+	$title   = (string) wp_unslash( (string) ( $data['post_title'] ?? '' ) );
+	$content = (string) wp_unslash( (string) ( $data['post_content'] ?? '' ) );
+	if ( $title === (string) $old->post_title && $content === (string) $old->post_content ) {
 		return $data;
 	}
 

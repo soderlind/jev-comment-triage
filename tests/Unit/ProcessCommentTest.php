@@ -17,13 +17,18 @@ use function Soderlind\Plugin\JevCommentTriage\process_comments;
  * Build a WP_Comment stand-in.
  */
 function make_comment( string $content, int $id = 10, int $post_id = 20 ): WP_Comment {
-	return new WP_Comment(
+	$comment = new WP_Comment(
 		[
 			'comment_ID'      => $id,
 			'comment_post_ID' => $post_id,
 			'comment_content' => $content,
 		]
 	);
+
+	// What get_comment() returns when the processor re-reads the comment after Jev answers.
+	$GLOBALS['jct_test_comments'][ $id ] = $comment;
+
+	return $comment;
 }
 
 /**
@@ -90,6 +95,8 @@ beforeEach(
 				'post_content' => 'Detailed post content.',
 			]
 		);
+		Functions\when( 'clean_comment_cache' )->justReturn( null );
+		Functions\when( 'get_comment' )->alias( static fn( $id ) => $GLOBALS['jct_test_comments'][ (int) $id ] ?? null );
 		Functions\when( 'add_comment_meta' )->justReturn( true );
 		Functions\when( 'delete_comment_meta' )->justReturn( true );
 		Functions\when( 'get_site_transient' )->justReturn( false );
@@ -102,7 +109,7 @@ beforeEach(
 
 afterEach(
 	function (): void {
-		unset( $GLOBALS['wpdb'] );
+		unset( $GLOBALS['wpdb'], $GLOBALS['jct_test_comments'] );
 	}
 );
 
@@ -259,6 +266,39 @@ it(
 		Functions\expect( 'wp_set_comment_status' )->never();
 
 		process_comment( make_comment( 'Malformed response test.' ) );
+	}
+);
+
+it(
+	'discards a result for a comment edited while Jev was answering',
+	function (): void {
+		stub_base( '1' );
+		Functions\when( 'AiProviderForJev\\evaluate' )->alias(
+			static function (): array {
+				make_comment( 'Edited into something else.' );
+				return [ 'answers' => answers_for( 'c0_', 'on_topic', 0.95 ) ];
+			}
+		);
+		Functions\expect( 'add_comment_meta' )->never();
+		Functions\expect( 'wp_set_comment_status' )->never();
+
+		process_comment( make_comment( 'The text Jev was asked about.' ) );
+	}
+);
+
+it(
+	'does not count a failure against a comment edited while Jev was answering',
+	function (): void {
+		stub_base( '1' );
+		Functions\when( 'AiProviderForJev\\evaluate' )->alias(
+			static function (): WP_Error {
+				make_comment( 'Edited into something else.' );
+				return new WP_Error( 'jev_api_error', 'boom' );
+			}
+		);
+		Functions\expect( 'update_comment_meta' )->never();
+
+		process_comment( make_comment( 'The text Jev was asked about.' ) );
 	}
 );
 

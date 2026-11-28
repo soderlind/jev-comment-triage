@@ -171,6 +171,10 @@ function process_chunk( array $postdata, array $chunk, array &$stats, Assessment
 	$results = $assessment->assess( $postdata, $items, (string) $chunk[0]['type'] );
 
 	foreach ( $items as $id => $request ) {
+		if ( is_stale( $byid[ $id ] ) ) {
+			continue;
+		}
+
 		$result = $results[ $id ] ?? new \WP_Error( 'jct_invalid_response', 'Jev returned no answer for this item.' );
 
 		if ( is_wp_error( $result ) ) {
@@ -196,6 +200,30 @@ function process_chunk( array $postdata, array $chunk, array &$stats, Assessment
 
 		apply_assessment( $byid[ $id ], $bases[ $id ], $result, $request['link_count'] );
 	}
+}
+
+/**
+ * Whether an item was edited or deleted after it was read for assessment.
+ *
+ * An edit while Jev is answering queues the item again with fresh markers, so
+ * the old answer must neither decide the new text nor use up its retries.
+ *
+ * @param array<string, mixed> $item Triage item as it was sent to Jev.
+ */
+function is_stale( array $item ): bool {
+	$id = (int) $item['id'];
+
+	if ( 'comment' === $item['type'] ) {
+		clean_comment_cache( $id );
+		$current = get_comment( $id );
+		$fresh   = $current instanceof \WP_Comment ? comment_item( $current ) : null;
+	} else {
+		clean_post_cache( $id );
+		$current = get_post( $id );
+		$fresh   = $current instanceof \WP_Post ? forum_item( $current ) : null;
+	}
+
+	return null === $fresh || $fresh['commentdata']['comment_content'] !== $item['commentdata']['comment_content'];
 }
 
 /**
