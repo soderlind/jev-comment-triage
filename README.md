@@ -1,7 +1,7 @@
 # Jev Comment Triage
 
 > **What does "triage" mean?** To *triage* is to sort things into groups, so
-> the most important ones get attention first. This plugin sorts each new post into one of three groups:
+> the most important ones get attention first. This plugin sorts each new comment into one of three groups:
 > spam, held for a moderator, or kept as WordPress decided.
 
 Auto-moderate WordPress comments and [bbPress](#bbpress-forums) forum topics
