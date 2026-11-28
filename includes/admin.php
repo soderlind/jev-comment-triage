@@ -97,7 +97,7 @@ function register_privacy_content(): void {
 		return;
 	}
 
-	$content = __( 'When you submit a comment, its text and the related post content — and, unless the site disables it, your name, email address, and website — are sent to the TypeSafe (Jev) service to check the comment for relevance, spam, and abuse before it is published.', 'jev-comment-triage' );
+	$content = __( 'When you submit or edit a comment, forum topic, or forum reply, its text and the related post, forum, or topic content — and, unless the site disables it, your name, email address, and website — are sent to the TypeSafe (Jev) service to check it for relevance, spam, and abuse before it is published.', 'jev-comment-triage' );
 	wp_add_privacy_policy_content( 'Jev Comment Triage', wp_kses_post( wpautop( $content ) ) );
 }
 
@@ -110,12 +110,12 @@ function cron_notice(): void {
 	}
 
 	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-	if ( ! $screen || ! in_array( $screen->id, [ 'edit-comments', 'plugins' ], true ) ) {
+	if ( ! $screen || ! in_array( $screen->id, [ 'edit-comments', 'edit-topic', 'edit-reply', 'plugins' ], true ) ) {
 		return;
 	}
 
 	printf(
 		'<div class="notice notice-warning"><p>%s</p></div>',
-		esc_html__( 'Jev Comment Triage: WP-Cron is disabled (DISABLE_WP_CRON). Make sure a system cron runs wp-cron.php, or deferred comments will not be triaged.', 'jev-comment-triage' )
+		esc_html__( 'Jev Comment Triage: WP-Cron is disabled (DISABLE_WP_CRON). Make sure a system cron runs wp-cron.php, or deferred comments and forum posts will not be triaged.', 'jev-comment-triage' )
 	);
 }

@@ -3,10 +3,10 @@ Contributors: PerS
 Requires at least: 6.8
 Tested up to: 6.7
 Requires PHP: 8.3
-Stable tag: 2.3.0
+Stable tag: 2.4.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Tags: comments, moderation, spam, ai, anti-spam
+Tags: comments, moderation, spam, bbpress, anti-spam
 
 Asynchronous AI comment moderation powered by TypeSafe's Jev model — relevance, spam, and abuse checks that act only on confident answers and keep comment submission fast.
 
@@ -26,10 +26,12 @@ The Jev call runs **asynchronously**, off the comment-submit request, so comment
 * Respects WordPress moderation, the comment blocklist, and trusted users; skips pingbacks and trackbacks.
 * Self-healing per-comment retry on API errors; nothing is publicly visible before triage.
 * Answers and decision shown in a "Jev" column on the Comments screen.
+* Edited comments are triaged again; an edit never publishes a held comment.
+* bbPress support: new and edited forum topics and replies are triaged the same way, using bbPress's own moderation functions.
 
 = Privacy =
 
-Comment text and the related post title and content — and, unless disabled with the `jct_include_author_details` filter, the author name, email, and URL — are sent to the TypeSafe (Jev) service. The spam cache stores only a salted hash of the comment and its author details, plus two probabilities. The plugin registers a suggested privacy-policy snippet under Settings → Privacy.
+Comment, topic, or reply text and the related post, forum, or topic title and content — and, unless disabled with the `jct_include_author_details` filter, the author name, email, and URL — are sent to the TypeSafe (Jev) service. The spam cache stores only a salted hash of the comment and its author details, plus two probabilities. The plugin registers a suggested privacy-policy snippet under Settings → Privacy.
 
 = Hooks =
 
@@ -39,7 +41,8 @@ Comment text and the related post title and content — and, unless disabled wit
 * `jct_spam_cache` (filter) — return true to skip Jev for cached spam texts (default false, shadow mode).
 * `jct_min_words` (filter) — hold link-free comments with fewer words without calling Jev (default 0, off).
 * `jct_include_author_details` (filter) — whether to send author PII (default true).
-* `jct_triaged` (action) — fires after a decision with the comment ID, assessment, and decision.
+* `jct_triaged` (action) — fires after a comment decision with the comment ID, assessment, and decision.
+* `jct_triaged_forum_post` (action) — fires after a bbPress decision with the post ID, assessment, decision, and type (`topic` or `reply`).
 
 == Installation ==
 
@@ -64,6 +67,13 @@ No. It remembers WordPress's own decision and only downgrades to spam or hold. C
 The comment stays pending (never auto-published) and is retried on later drain ticks; after a few failed attempts it is left held for a human.
 
 == Changelog ==
+
+= 2.4.0 =
+* bbPress support: new and edited forum topics and replies are triaged like comments. Topics are judged against their forum, replies against their topic. Forum moderators are not triaged. A Jev column shows results on the Topics and Replies screens.
+* Edited comments are triaged again when their text changes. An edit never publishes a held comment.
+* Added the `jct_triaged_forum_post` action.
+* Added a Jev vs Akismet benchmark under `benchmark/`.
+* Added a Playwright acceptance test suite and updated the architecture docs and diagrams.
 
 = 2.3.0 =
 * Jev now replaces the AI plugin's Comment Moderation experiment for regular comments it holds on submit: they are filtered out of `wpai_comment_moderation_comment_types`, so `ai/comment-analysis` is not called and the experiment no longer changes their status. Direct `wp_insert_comment()` calls stay with the AI plugin. Opt out with the `jct_override_ai_moderation` filter.

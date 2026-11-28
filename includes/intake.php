@@ -144,6 +144,13 @@ function enqueue( int $comment_id, $approved, array $commentdata ): void {
 
 	add_comment_meta( $comment_id, PENDING_META, 1, true );
 	add_comment_meta( $comment_id, BASE_META, $base, true );
+	schedule_soon();
+}
+
+/**
+ * Ensure the recurring drain exists and nudge an immediate one.
+ */
+function schedule_soon(): void {
 	ensure_scheduled();
 
 	if ( ! wp_next_scheduled( EVENT, [ 'now' ] ) && ! get_transient( 'jct_drain_soon' ) ) {
@@ -151,4 +158,124 @@ function enqueue( int $comment_id, $approved, array $commentdata ): void {
 		wp_schedule_single_event( time(), EVENT, [ 'now' ] );
 		spawn_cron();
 	}
+}
+
+/**
+ * Remember holds made in a pre-save filter until the matching after-save hook.
+ *
+ * Keys are 'new:{type}' or 'edit:{type}:{id}'; values are the base decision,
+ * or null to keep the base already stored on a still-queued item.
+ *
+ * @return array<string, string|null>
+ */
+function &edit_registry(): array {
+	static $registry = [];
+
+	return $registry;
+}
+
+/**
+ * Choose the base decision for an edited item.
+ *
+ * An item still waiting in the queue keeps its original base. Otherwise the
+ * current status is the base, so an edit can never publish an item that was
+ * held, whether by Jev or by a moderator.
+ *
+ * @param array<string, mixed> $item   Triage item (type, id).
+ * @param string               $status '1' if currently published, '0' if held.
+ */
+function retriage_base( array $item, string $status ): ?string {
+	if ( '' !== (string) item_meta( $item, PENDING_META ) && ! is_array( item_meta( $item, META_KEY ) ) ) {
+		return null;
+	}
+
+	return '1' === $status ? '1' : '0';
+}
+
+/**
+ * Put an item (back) in the queue, replacing any earlier assessment.
+ *
+ * @param array<string, mixed> $item Triage item (type, id).
+ * @param string|null          $base Base decision, or null to keep the stored one.
+ */
+function queue_item( array $item, ?string $base ): void {
+	delete_item_meta( $item, META_KEY );
+	delete_item_meta( $item, ATTEMPTS_META );
+	update_item_meta( $item, PENDING_META, 1 );
+	if ( null !== $base ) {
+		update_item_meta( $item, BASE_META, $base );
+	}
+
+	schedule_soon();
+}
+
+/**
+ * Hold an edited regular comment whose content changed, for triage again.
+ *
+ * Edits by comment moderators, and edits of comments by trusted authors, are
+ * not triaged. Spam and trashed comments are left alone.
+ *
+ * @param array|\WP_Error $data    New comment data.
+ * @param array           $comment Old comment data.
+ * @return array|\WP_Error
+ */
+function hold_edited_comment( $data, $comment = [] ) {
+	if ( ! is_array( $data ) || ! provider_ready() || ! is_regular_comment( $data ) ) {
+		return $data;
+	}
+
+	$id     = (int) ( $data['comment_ID'] ?? 0 );
+	$status = (string) ( $data['comment_approved'] ?? '' );
+
+	if ( $id < 1 || ! in_array( $status, [ '0', '1' ], true ) ) {
+		return $data;
+	}
+
+	if ( is_trusted( (int) ( $data['user_id'] ?? 0 ) ) || current_user_can( 'moderate_comments' ) ) {
+		return $data;
+	}
+
+	// WordPress passes the old data slashed.
+	$old = (string) wp_unslash( (string) ( ( (array) $comment )['comment_content'] ?? '' ) );
+	if ( (string) ( $data['comment_content'] ?? '' ) === $old ) {
+		return $data;
+	}
+
+	$item = [
+		'type' => 'comment',
+		'id'   => $id,
+	];
+
+	// Approving in the same save must not release a comment that was held before it.
+	$was_approved                    = '1' === (string) ( ( (array) $comment )['comment_approved'] ?? $status );
+	$claims                          = &edit_registry();
+	$claims[ 'edit:comment:' . $id ] = retriage_base( $item, $was_approved ? $status : '0' );
+	$data['comment_approved']        = 0;
+
+	return $data;
+}
+
+/**
+ * Queue a comment held by hold_edited_comment().
+ *
+ * @param int $comment_id Edited comment ID.
+ */
+function queue_edited_comment( $comment_id ): void {
+	$key    = 'edit:comment:' . (int) $comment_id;
+	$claims = &edit_registry();
+
+	if ( ! array_key_exists( $key, $claims ) ) {
+		return;
+	}
+
+	$base = $claims[ $key ];
+	unset( $claims[ $key ] );
+
+	queue_item(
+		[
+			'type' => 'comment',
+			'id'   => (int) $comment_id,
+		],
+		$base
+	);
 }

@@ -7,3 +7,9 @@ Thumbs.db
 
 # Benchmark dataset, downloaded by benchmark/run.sh
 benchmark/data/
+
+# Playwright acceptance suite
+/tests/acceptance/.auth/
+/test-results/
+/playwright-report/
+/node_modules/

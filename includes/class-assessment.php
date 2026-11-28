@@ -37,18 +37,51 @@ final class Assessment {
 	}
 
 	/**
-	 * Judge comments on one post and return one result for every caller key.
+	 * Relevance wording per kind of content; the context is always sent as `post`.
 	 *
-	 * @param array                                                       $postdata Post data (post_title, post_content).
-	 * @param array<int|string, array{commentdata:array, link_count:int}> $items Comments keyed by caller ID.
+	 * @var array<string, array{question:string, criteria:array<string, string>}>
+	 */
+	private const RELEVANCE = [
+		'comment' => [
+			'question' => 'How does `comment.content` relate to the blog post in `post.title` and `post.content`?',
+			'criteria' => [
+				'on_topic'  => 'It discusses, questions, critiques, or adds to the subject of the post.',
+				'off_topic' => 'It is about something unrelated to the post.',
+				'unclear'   => 'It is too short, garbled, or vague to tell.',
+			],
+		],
+		'reply'   => [
+			'question' => 'How does the forum reply in `comment.content` relate to the forum topic in `post.title` and `post.content`?',
+			'criteria' => [
+				'on_topic'  => 'It discusses, answers, questions, critiques, or adds to the subject of the topic.',
+				'off_topic' => 'It is about something unrelated to the topic.',
+				'unclear'   => 'It is too short, garbled, or vague to tell.',
+			],
+		],
+		'topic'   => [
+			'question' => 'Does the new forum topic in `comment.content` (title, blank line, then body) fit the forum named in `post.title` and described in `post.content`?',
+			'criteria' => [
+				'on_topic'  => 'It is a genuine question, discussion, or contribution that fits the forum.',
+				'off_topic' => 'It is about something that does not belong in the forum.',
+				'unclear'   => 'It is too short, garbled, or vague to tell.',
+			],
+		],
+	];
+
+	/**
+	 * Judge items sharing one context and return one result for every caller key.
+	 *
+	 * @param array                                                       $postdata Context data (post_title, post_content).
+	 * @param array<int|string, array{commentdata:array, link_count:int}> $items    Items keyed by caller ID.
+	 * @param string                                                      $kind     Kind of content: comment, topic, or reply.
 	 * @return array<int|string, array<string, mixed>|\WP_Error>
 	 */
-	public function assess( array $postdata, array $items ): array {
+	public function assess( array $postdata, array $items, string $kind = 'comment' ): array {
 		if ( [] === $items ) {
 			return [];
 		}
 
-		$results = $this->request( $postdata, $items );
+		$results = $this->request( $postdata, $items, $kind );
 
 		if ( ! is_wp_error( $results ) ) {
 			return $results;
@@ -60,17 +93,18 @@ final class Assessment {
 
 		$halves = array_chunk( $items, (int) ceil( count( $items ) / 2 ), true );
 
-		return $this->assess( $postdata, $halves[0] ) + $this->assess( $postdata, $halves[1] );
+		return $this->assess( $postdata, $halves[0], $kind ) + $this->assess( $postdata, $halves[1], $kind );
 	}
 
 	/**
 	 * Send one request and normalize its answers.
 	 *
-	 * @param array                                                       $postdata Post data.
-	 * @param array<int|string, array{commentdata:array, link_count:int}> $items Comments keyed by caller ID.
+	 * @param array                                                       $postdata Context data.
+	 * @param array<int|string, array{commentdata:array, link_count:int}> $items    Items keyed by caller ID.
+	 * @param string                                                      $kind     Kind of content.
 	 * @return array<int|string, array<string, mixed>|\WP_Error>|\WP_Error
 	 */
-	private function request( array $postdata, array $items ): array|\WP_Error {
+	private function request( array $postdata, array $items, string $kind ): array|\WP_Error {
 		$state     = [
 			'post' => [
 				'title'   => (string) ( $postdata['post_title'] ?? '' ),
@@ -87,7 +121,7 @@ final class Assessment {
 			$prefixes[ $key ] = $prefix;
 			$payload          = comment_payload( (array) $item['commentdata'], (int) $item['link_count'] );
 
-			foreach ( $this->questions( $payload ) as $id => $question ) {
+			foreach ( $this->questions( $payload, $kind ) as $id => $question ) {
 				$questions[ $prefix . $id ] = $question;
 			}
 		}
@@ -109,24 +143,26 @@ final class Assessment {
 	}
 
 	/**
-	 * Build the three independent judgments for one comment.
+	 * Build the three independent judgments for one item.
 	 *
-	 * @param array<string, mixed> $comment Comment payload.
+	 * Only the relevance question depends on the kind; the spam and abuse
+	 * questions are identical for every kind, so cached spam verdicts apply to all.
+	 *
+	 * @param array<string, mixed> $comment Item payload.
+	 * @param string               $kind    Kind of content.
 	 * @return array<string, array<string, mixed>>
 	 */
-	private function questions( array $comment ): array {
+	private function questions( array $comment, string $kind ): array {
+		$relevance = self::RELEVANCE[ $kind ] ?? self::RELEVANCE['comment'];
+
 		return [
 			'relevance' => [
 				'type'         => 'choice',
 				'instructions' => [
-					'question' => 'How does `comment.content` relate to the blog post in `post.title` and `post.content`?',
+					'question' => $relevance['question'],
 					'comment'  => $comment,
 				],
-				'criteria'     => [
-					'on_topic'  => 'It discusses, questions, critiques, or adds to the subject of the post.',
-					'off_topic' => 'It is about something unrelated to the post.',
-					'unclear'   => 'It is too short, garbled, or vague to tell.',
-				],
+				'criteria'     => $relevance['criteria'],
 			],
 			'spam'      => [
 				'type'         => 'noul',

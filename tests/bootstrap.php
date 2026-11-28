@@ -64,6 +64,27 @@ namespace {
 		}
 	}
 
+	if ( ! class_exists( 'WP_Post' ) ) {
+		/** Minimal WP_Post stand-in. */
+		class WP_Post {
+			public int $ID                 = 0;
+			public string $post_type       = 'post';
+			public string $post_title      = '';
+			public string $post_content    = '';
+			public string $post_status     = 'publish';
+			public string $post_date_gmt   = '';
+			public int $post_parent        = 0;
+			public int|string $post_author = 0;
+
+			/** @param array<string, mixed> $props */
+			public function __construct( array $props = [] ) {
+				foreach ( $props as $key => $value ) {
+					$this->$key = $value;
+				}
+			}
+		}
+	}
+
 	// No-op stubs for the hooks the plugin registers at load time.
 	if ( ! function_exists( 'add_filter' ) ) {
 		function add_filter( ...$args ): bool {

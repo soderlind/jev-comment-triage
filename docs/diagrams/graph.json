@@ -2,9 +2,12 @@
   "schemaVersion": "0.3.1",
   "kind": "graph",
   "id": "jev-comment-triage-current",
-  "title": "Jev Comment Triage: current operation",
-  "summary": "How eligible comments are deferred, assessed asynchronously, and routed without overriding WordPress moderation.",
-  "lenses": ["architecture", "data-flow"],
+  "title": "Jev Comment Triage: comments and bbPress forums",
+  "summary": "How comments, topics, and replies (new or edited) are held, assessed asynchronously, and routed without overriding WordPress or bbPress moderation. Working tree on top of d79dfbe.",
+  "lenses": [
+    "architecture",
+    "data-flow"
+  ],
   "provenance": {
     "repo": {
       "owner": "soderlind",
@@ -12,167 +15,768 @@
       "host": "github.com"
     },
     "base": {
-      "sha": "f387f158148e3451082021c601fc88b84411137a",
+      "sha": "d79dfbe8faf994e8e29c0bc5bf80d32e5aef5906",
       "ref": "main"
     },
     "head": {
-      "sha": "f387f158148e3451082021c601fc88b84411137a",
+      "sha": "d79dfbe8faf994e8e29c0bc5bf80d32e5aef5906",
       "ref": "main"
     }
   },
   "lanes": [
-    { "id": "people", "label": "People", "order": 0 },
-    { "id": "wordpress", "label": "WordPress", "order": 1 },
-    { "id": "triage", "label": "Jev triage plugin", "order": 2 },
-    { "id": "provider", "label": "Provider plugin", "order": 3 },
-    { "id": "remote", "label": "External service", "order": 4 },
-    { "id": "outcomes", "label": "WordPress outcomes", "order": 5 }
+    {
+      "id": "people",
+      "label": "People",
+      "order": 0
+    },
+    {
+      "id": "wordpress",
+      "label": "WordPress",
+      "order": 1
+    },
+    {
+      "id": "triage",
+      "label": "Jev triage plugin",
+      "order": 2
+    },
+    {
+      "id": "provider",
+      "label": "Provider plugin",
+      "order": 3
+    },
+    {
+      "id": "remote",
+      "label": "External service",
+      "order": 4
+    },
+    {
+      "id": "outcomes",
+      "label": "WordPress outcomes",
+      "order": 5
+    }
   ],
   "nodes": [
     {
-      "id": "author", "label": "Comment author", "kind": "ui", "delta": "unchanged",
-      "lane": "people", "files": [{ "path": "README.md", "startLine": 35 }]
+      "id": "author",
+      "label": "Comment author",
+      "kind": "ui",
+      "delta": "unchanged",
+      "lane": "people",
+      "files": [
+        {
+          "path": "README.md",
+          "startLine": 38
+        },
+        {
+          "path": "README.md",
+          "startLine": 60
+        }
+      ]
     },
     {
-      "id": "comments", "label": "WordPress comments", "kind": "service", "delta": "unchanged",
-      "lane": "wordpress", "subtitle": "status + comment meta",
-      "files": [{ "path": "includes/intake.php", "startLine": 133 }, { "path": "includes/processor.php", "startLine": 173 }]
+      "id": "forum-author",
+      "delta": "unchanged",
+      "label": "Forum author",
+      "kind": "ui",
+      "lane": "people",
+      "files": [
+        {
+          "path": "README.md",
+          "startLine": 90
+        }
+      ]
     },
     {
-      "id": "cron", "label": "WP-Cron", "kind": "job", "delta": "unchanged",
-      "lane": "wordpress", "subtitle": "recurring + nudge",
-      "files": [{ "path": "includes/intake.php", "startLine": 147 }, { "path": "includes/scheduler.php", "startLine": 18 }]
+      "id": "comments",
+      "label": "WordPress comments",
+      "kind": "service",
+      "delta": "unchanged",
+      "lane": "wordpress",
+      "subtitle": "status + comment meta",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 133
+        },
+        {
+          "path": "includes/processor.php",
+          "startLine": 251
+        }
+      ]
     },
     {
-      "id": "cache", "label": "Spam cache", "kind": "cache", "delta": "unchanged",
-      "lane": "wordpress", "subtitle": "shadow by default",
-      "files": [{ "path": "includes/spam-cache.php", "startLine": 17 }, { "path": "includes/processor.php", "startLine": 110 }]
+      "id": "bbpress",
+      "delta": "unchanged",
+      "label": "bbPress",
+      "kind": "service",
+      "lane": "wordpress",
+      "subtitle": "topics + replies, post meta",
+      "files": [
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 26
+        },
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 298
+        }
+      ]
     },
     {
-      "id": "intake", "label": "Intake", "kind": "module", "delta": "unchanged",
-      "lane": "triage", "subtitle": "defer / enqueue",
-      "files": [{ "path": "includes/intake.php", "startLine": 65 }, { "path": "includes/intake.php", "startLine": 133 }]
+      "id": "cron",
+      "label": "WP-Cron",
+      "kind": "job",
+      "delta": "unchanged",
+      "lane": "wordpress",
+      "subtitle": "recurring + nudge",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 154
+        },
+        {
+          "path": "includes/scheduler.php",
+          "startLine": 18
+        }
+      ]
     },
     {
-      "id": "drain", "label": "Queue drain", "kind": "job", "delta": "unchanged",
-      "lane": "triage", "subtitle": "oldest held first", "badges": ["best-effort lock"],
-      "files": [{ "path": "includes/scheduler.php", "startLine": 46 }]
+      "id": "cache",
+      "label": "Spam cache",
+      "kind": "cache",
+      "delta": "unchanged",
+      "lane": "wordpress",
+      "subtitle": "shadow by default",
+      "files": [
+        {
+          "path": "includes/spam-cache.php",
+          "startLine": 17
+        },
+        {
+          "path": "includes/processor.php",
+          "startLine": 148
+        }
+      ]
     },
     {
-      "id": "processor", "label": "Processor", "kind": "module", "delta": "unchanged",
-      "lane": "triage", "subtitle": "group by post",
-      "files": [{ "path": "includes/processor.php", "startLine": 27 }]
+      "id": "intake",
+      "label": "Intake",
+      "kind": "module",
+      "delta": "unchanged",
+      "lane": "triage",
+      "subtitle": "hold / queue / re-queue edits",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 65
+        },
+        {
+          "path": "includes/intake.php",
+          "startLine": 201
+        },
+        {
+          "path": "includes/intake.php",
+          "startLine": 222
+        }
+      ]
     },
     {
-      "id": "assessment", "label": "Assessment", "kind": "module", "delta": "unchanged",
-      "lane": "triage", "subtitle": "3 typed questions",
-      "files": [{ "path": "includes/class-assessment.php", "startLine": 46 }, { "path": "includes/class-assessment.php", "startLine": 117 }]
+      "id": "forum",
+      "delta": "unchanged",
+      "label": "bbPress integration",
+      "kind": "module",
+      "lane": "triage",
+      "subtitle": "if bbPress is active",
+      "files": [
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 19
+        },
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 26
+        }
+      ]
     },
     {
-      "id": "policy", "label": "Decision policy", "kind": "module", "delta": "unchanged",
-      "lane": "triage", "subtitle": "default thresholds",
-      "files": [{ "path": "includes/policy.php", "startLine": 42 }, { "path": "jev-comment-triage.php", "startLine": 34 }]
+      "id": "drain",
+      "label": "Queue drain",
+      "kind": "job",
+      "delta": "unchanged",
+      "lane": "triage",
+      "subtitle": "comments + forum, oldest first",
+      "badges": [
+        "best-effort lock"
+      ],
+      "files": [
+        {
+          "path": "includes/scheduler.php",
+          "startLine": 46
+        }
+      ]
     },
     {
-      "id": "base", "label": "Base decision", "kind": "other", "delta": "unchanged",
-      "lane": "outcomes", "subtitle": "WordPress decision",
-      "files": [{ "path": "includes/intake.php", "startLine": 78 }, { "path": "includes/policy.php", "startLine": 59 }]
+      "id": "processor",
+      "label": "Processor",
+      "kind": "module",
+      "delta": "unchanged",
+      "lane": "triage",
+      "subtitle": "group by source + context",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 70
+        }
+      ]
     },
     {
-      "id": "spam", "label": "Spam", "kind": "other", "delta": "unchanged",
-      "lane": "outcomes", "files": [{ "path": "includes/policy.php", "startLine": 47 }]
+      "id": "assessment",
+      "label": "Assessment",
+      "kind": "module",
+      "delta": "unchanged",
+      "lane": "triage",
+      "subtitle": "3 typed questions",
+      "files": [
+        {
+          "path": "includes/class-assessment.php",
+          "startLine": 79
+        },
+        {
+          "path": "includes/class-assessment.php",
+          "startLine": 155
+        }
+      ]
     },
     {
-      "id": "held", "label": "Held", "kind": "other", "delta": "unchanged",
-      "lane": "outcomes", "files": [{ "path": "includes/policy.php", "startLine": 51 }, { "path": "includes/policy.php", "startLine": 63 }]
+      "id": "policy",
+      "label": "Decision policy",
+      "kind": "module",
+      "delta": "unchanged",
+      "lane": "triage",
+      "subtitle": "default thresholds",
+      "files": [
+        {
+          "path": "includes/policy.php",
+          "startLine": 42
+        },
+        {
+          "path": "jev-comment-triage.php",
+          "startLine": 34
+        }
+      ]
     },
     {
-      "id": "approved", "label": "Approved", "kind": "other", "delta": "unchanged",
-      "lane": "outcomes", "files": [{ "path": "includes/processor.php", "startLine": 215 }]
+      "id": "base",
+      "label": "Base decision",
+      "kind": "other",
+      "delta": "unchanged",
+      "lane": "outcomes",
+      "subtitle": "WordPress decision",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 78
+        },
+        {
+          "path": "includes/policy.php",
+          "startLine": 59
+        }
+      ]
     },
     {
-      "id": "jev-provider", "label": "Jev provider", "kind": "external", "delta": "unchanged",
-      "lane": "provider", "subtitle": "AI Provider for Jev",
-      "files": [{ "path": "includes/processor.php", "startLine": 29 }, { "path": "README.md", "startLine": 24 }]
+      "id": "spam",
+      "label": "Spam",
+      "kind": "other",
+      "delta": "unchanged",
+      "lane": "outcomes",
+      "files": [
+        {
+          "path": "includes/policy.php",
+          "startLine": 47
+        }
+      ]
     },
     {
-      "id": "jev-api", "label": "TypeSafe Jev", "kind": "external", "delta": "unchanged",
-      "lane": "remote", "subtitle": "external model",
-      "files": [{ "path": "includes/admin.php", "startLine": 100 }]
+      "id": "held",
+      "label": "Held",
+      "kind": "other",
+      "delta": "unchanged",
+      "lane": "outcomes",
+      "files": [
+        {
+          "path": "includes/policy.php",
+          "startLine": 51
+        },
+        {
+          "path": "includes/policy.php",
+          "startLine": 63
+        }
+      ]
+    },
+    {
+      "id": "approved",
+      "label": "Approved",
+      "kind": "other",
+      "delta": "unchanged",
+      "lane": "outcomes",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 251
+        }
+      ]
+    },
+    {
+      "id": "jev-provider",
+      "label": "Jev provider",
+      "kind": "external",
+      "delta": "unchanged",
+      "lane": "provider",
+      "subtitle": "AI Provider for Jev",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 72
+        },
+        {
+          "path": "README.md",
+          "startLine": 25
+        }
+      ]
+    },
+    {
+      "id": "jev-api",
+      "label": "TypeSafe Jev",
+      "kind": "external",
+      "delta": "unchanged",
+      "lane": "remote",
+      "subtitle": "external model",
+      "files": [
+        {
+          "path": "includes/admin.php",
+          "startLine": 95
+        }
+      ]
     }
   ],
   "edges": [
     {
-      "id": "author-comments", "from": "author", "to": "comments", "kind": "event",
-      "delta": "unchanged", "label": "submit", "files": [{ "path": "README.md", "startLine": 35 }]
+      "id": "author-comments",
+      "from": "author",
+      "to": "comments",
+      "kind": "event",
+      "delta": "unchanged",
+      "label": "submit / edit",
+      "files": [
+        {
+          "path": "README.md",
+          "startLine": 38
+        },
+        {
+          "path": "README.md",
+          "startLine": 60
+        }
+      ]
     },
     {
-      "id": "comments-intake", "from": "comments", "to": "intake", "kind": "event",
-      "delta": "unchanged", "label": "comment hooks", "files": [{ "path": "jev-comment-triage.php", "startLine": 82 }]
+      "id": "comments-intake",
+      "from": "comments",
+      "to": "intake",
+      "kind": "event",
+      "delta": "unchanged",
+      "label": "comment + edit hooks",
+      "files": [
+        {
+          "path": "jev-comment-triage.php",
+          "startLine": 83
+        },
+        {
+          "path": "jev-comment-triage.php",
+          "startLine": 86
+        }
+      ]
     },
     {
-      "id": "intake-comments", "from": "intake", "to": "comments", "kind": "data",
-      "delta": "unchanged", "label": "hold + queue meta", "files": [{ "path": "includes/intake.php", "startLine": 65 }, { "path": "includes/intake.php", "startLine": 133 }]
+      "id": "intake-comments",
+      "from": "intake",
+      "to": "comments",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "hold + queue meta",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 65
+        },
+        {
+          "path": "includes/intake.php",
+          "startLine": 133
+        }
+      ]
     },
     {
-      "id": "intake-cron", "from": "intake", "to": "cron", "kind": "event",
-      "delta": "unchanged", "label": "schedule + nudge", "files": [{ "path": "includes/intake.php", "startLine": 147 }]
+      "id": "intake-cron",
+      "from": "intake",
+      "to": "cron",
+      "kind": "event",
+      "delta": "unchanged",
+      "label": "schedule + nudge",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 154
+        }
+      ]
     },
     {
-      "id": "cron-drain", "from": "cron", "to": "drain", "kind": "event",
-      "delta": "unchanged", "label": "jct_drain", "files": [{ "path": "jev-comment-triage.php", "startLine": 86 }]
+      "id": "cron-drain",
+      "from": "cron",
+      "to": "drain",
+      "kind": "event",
+      "delta": "unchanged",
+      "label": "jct_drain",
+      "files": [
+        {
+          "path": "jev-comment-triage.php",
+          "startLine": 92
+        }
+      ]
     },
     {
-      "id": "drain-processor", "from": "drain", "to": "processor", "kind": "call",
-      "delta": "unchanged", "label": "bounded batch", "files": [{ "path": "includes/scheduler.php", "startLine": 56 }]
+      "id": "drain-processor",
+      "from": "drain",
+      "to": "processor",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "bounded batch",
+      "files": [
+        {
+          "path": "includes/scheduler.php",
+          "startLine": 60
+        }
+      ]
     },
     {
-      "id": "processor-assessment", "from": "processor", "to": "assessment", "kind": "call",
-      "delta": "unchanged", "label": "batch by post", "files": [{ "path": "includes/processor.php", "startLine": 27 }, { "path": "includes/processor.php", "startLine": 135 }]
+      "id": "processor-assessment",
+      "from": "processor",
+      "to": "assessment",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "batch by context",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 70
+        },
+        {
+          "path": "includes/processor.php",
+          "startLine": 171
+        }
+      ]
     },
     {
-      "id": "assessment-provider", "from": "assessment", "to": "jev-provider", "kind": "call",
-      "delta": "unchanged", "label": "evaluate()", "files": [{ "path": "includes/processor.php", "startLine": 29 }, { "path": "includes/class-assessment.php", "startLine": 95 }]
+      "id": "assessment-provider",
+      "from": "assessment",
+      "to": "jev-provider",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "evaluate()",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 72
+        },
+        {
+          "path": "includes/class-assessment.php",
+          "startLine": 129
+        }
+      ]
     },
     {
-      "id": "provider-api", "from": "jev-provider", "to": "jev-api", "kind": "http",
-      "delta": "unchanged", "label": "HTTP request", "files": [{ "path": "docs/architecture.md", "startLine": 55 }]
+      "id": "provider-api",
+      "from": "jev-provider",
+      "to": "jev-api",
+      "kind": "http",
+      "delta": "unchanged",
+      "label": "HTTP request",
+      "files": [
+        {
+          "path": "docs/architecture.md",
+          "startLine": 63
+        }
+      ]
     },
     {
-      "id": "processor-cache", "from": "processor", "to": "cache", "kind": "data",
-      "delta": "unchanged", "label": "look up / store", "files": [{ "path": "includes/processor.php", "startLine": 110 }, { "path": "includes/processor.php", "startLine": 149 }]
+      "id": "processor-cache",
+      "from": "processor",
+      "to": "cache",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "look up / store",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 148
+        },
+        {
+          "path": "includes/processor.php",
+          "startLine": 185
+        }
+      ]
     },
     {
-      "id": "processor-comments", "from": "processor", "to": "comments", "kind": "data",
-      "delta": "unchanged", "label": "store result + status", "files": [{ "path": "includes/processor.php", "startLine": 173 }]
+      "id": "processor-comments",
+      "from": "processor",
+      "to": "comments",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "store result + status",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 209
+        },
+        {
+          "path": "includes/processor.php",
+          "startLine": 251
+        }
+      ]
     },
     {
-      "id": "assessment-processor", "from": "assessment", "to": "processor", "kind": "data",
-      "delta": "unchanged", "label": "validated assessment", "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+      "id": "assessment-processor",
+      "from": "assessment",
+      "to": "processor",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "validated assessment",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 171
+        }
+      ]
     },
     {
-      "id": "processor-policy", "from": "processor", "to": "policy", "kind": "call",
-      "delta": "unchanged", "label": "decide with base", "files": [{ "path": "includes/processor.php", "startLine": 173 }]
+      "id": "processor-policy",
+      "from": "processor",
+      "to": "policy",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "decide with base",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 210
+        }
+      ]
     },
     {
-      "id": "policy-spam", "from": "policy", "to": "spam", "kind": "data",
-      "delta": "unchanged", "label": "1. spam >= 0.90", "files": [{ "path": "includes/policy.php", "startLine": 47 }, { "path": "jev-comment-triage.php", "startLine": 34 }]
+      "id": "policy-spam",
+      "from": "policy",
+      "to": "spam",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "1. spam >= 0.90",
+      "files": [
+        {
+          "path": "includes/policy.php",
+          "startLine": 47
+        },
+        {
+          "path": "jev-comment-triage.php",
+          "startLine": 34
+        }
+      ]
     },
     {
-      "id": "policy-held", "from": "policy", "to": "held", "kind": "data",
-      "delta": "unchanged", "label": "2. abuse >= 0.50 / 4. other", "files": [{ "path": "includes/policy.php", "startLine": 51 }, { "path": "includes/policy.php", "startLine": 63 }]
+      "id": "policy-held",
+      "from": "policy",
+      "to": "held",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "2. abuse >= 0.50 / 4. other",
+      "files": [
+        {
+          "path": "includes/policy.php",
+          "startLine": 51
+        },
+        {
+          "path": "includes/policy.php",
+          "startLine": 63
+        }
+      ]
     },
     {
-      "id": "policy-base", "from": "policy", "to": "base", "kind": "data",
-      "delta": "unchanged", "label": "3. on-topic confidence >= 0.80; spam/abuse < 0.20", "files": [{ "path": "includes/policy.php", "startLine": 55 }, { "path": "jev-comment-triage.php", "startLine": 34 }]
+      "id": "policy-base",
+      "from": "policy",
+      "to": "base",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "3. on-topic confidence >= 0.80; spam/abuse < 0.20",
+      "files": [
+        {
+          "path": "includes/policy.php",
+          "startLine": 55
+        },
+        {
+          "path": "jev-comment-triage.php",
+          "startLine": 34
+        }
+      ]
     },
     {
-      "id": "base-approved", "from": "base", "to": "approved", "kind": "data",
-      "delta": "unchanged", "label": "WordPress approved", "files": [{ "path": "includes/intake.php", "startLine": 78 }, { "path": "includes/processor.php", "startLine": 212 }]
+      "id": "base-approved",
+      "from": "base",
+      "to": "approved",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "WordPress approved",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 78
+        },
+        {
+          "path": "includes/processor.php",
+          "startLine": 251
+        }
+      ]
     },
     {
-      "id": "base-held", "from": "base", "to": "held", "kind": "data",
-      "delta": "unchanged", "label": "WordPress held", "files": [{ "path": "includes/intake.php", "startLine": 78 }, { "path": "includes/processor.php", "startLine": 212 }]
+      "id": "base-held",
+      "from": "base",
+      "to": "held",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "WordPress held",
+      "files": [
+        {
+          "path": "includes/intake.php",
+          "startLine": 78
+        },
+        {
+          "path": "includes/processor.php",
+          "startLine": 251
+        }
+      ]
+    },
+    {
+      "id": "forum-author-bbpress",
+      "from": "forum-author",
+      "to": "bbpress",
+      "kind": "event",
+      "delta": "unchanged",
+      "label": "submit / edit",
+      "files": [
+        {
+          "path": "README.md",
+          "startLine": 90
+        }
+      ]
+    },
+    {
+      "id": "bbpress-forum",
+      "from": "bbpress",
+      "to": "forum",
+      "kind": "event",
+      "delta": "unchanged",
+      "label": "topic + reply hooks",
+      "files": [
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 32
+        },
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 37
+        }
+      ]
+    },
+    {
+      "id": "forum-bbpress",
+      "from": "forum",
+      "to": "bbpress",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "hold as pending",
+      "files": [
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 101
+        },
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 154
+        }
+      ]
+    },
+    {
+      "id": "forum-intake",
+      "from": "forum",
+      "to": "intake",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "queue_item()",
+      "files": [
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 128
+        },
+        {
+          "path": "includes/intake.php",
+          "startLine": 201
+        }
+      ]
+    },
+    {
+      "id": "drain-forum",
+      "from": "drain",
+      "to": "forum",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "forum_queue()",
+      "files": [
+        {
+          "path": "includes/scheduler.php",
+          "startLine": 56
+        },
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 271
+        }
+      ]
+    },
+    {
+      "id": "processor-forum",
+      "from": "processor",
+      "to": "forum",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "finalize_forum_post()",
+      "files": [
+        {
+          "path": "includes/processor.php",
+          "startLine": 251
+        },
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 298
+        }
+      ]
+    },
+    {
+      "id": "forum-bbpress-status",
+      "from": "forum",
+      "to": "bbpress",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "bbp_approve / unapprove / spam",
+      "files": [
+        {
+          "path": "includes/bbpress.php",
+          "startLine": 298
+        }
+      ]
     }
   ],
   "flows": [
@@ -182,147 +786,485 @@
       "summary": "An eligible comment is held and queued; the submission request makes no Jev call.",
       "delta": "unchanged",
       "participants": [
-        { "node": "author", "label": "Author" },
-        { "node": "comments", "label": "WordPress" },
-        { "node": "intake", "label": "Intake" },
-        { "node": "cron", "label": "WP-Cron" }
+        {
+          "node": "author",
+          "label": "Author"
+        },
+        {
+          "node": "comments",
+          "label": "WordPress"
+        },
+        {
+          "node": "intake",
+          "label": "Intake"
+        },
+        {
+          "node": "cron",
+          "label": "WP-Cron"
+        }
       ],
       "messages": [
         {
-          "id": "submit", "from": "author", "to": "comments", "kind": "sync",
-          "label": "submit eligible comment", "delta": "unchanged",
-          "files": [{ "path": "README.md", "startLine": 37 }]
+          "id": "submit",
+          "from": "author",
+          "to": "comments",
+          "kind": "sync",
+          "label": "submit eligible comment",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "README.md",
+              "startLine": 38
+            }
+          ]
         },
         {
-          "id": "pre-approval", "from": "comments", "to": "intake", "kind": "sync",
-          "label": "pre_comment_approved", "delta": "unchanged",
-          "files": [{ "path": "jev-comment-triage.php", "startLine": 82 }]
+          "id": "pre-approval",
+          "from": "comments",
+          "to": "intake",
+          "kind": "sync",
+          "label": "pre_comment_approved",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "jev-comment-triage.php",
+              "startLine": 83
+            }
+          ]
         },
         {
-          "id": "remember-base", "from": "intake", "to": "intake", "kind": "self",
-          "label": "remember base decision", "delta": "unchanged",
-          "files": [{ "path": "includes/intake.php", "startLine": 78 }]
+          "id": "remember-base",
+          "from": "intake",
+          "to": "intake",
+          "kind": "self",
+          "label": "remember base decision",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 78
+            }
+          ]
         },
         {
-          "id": "hold", "from": "intake", "to": "comments", "kind": "return",
-          "label": "return hold (0)", "delta": "unchanged",
-          "files": [{ "path": "includes/intake.php", "startLine": 88 }]
+          "id": "hold",
+          "from": "intake",
+          "to": "comments",
+          "kind": "return",
+          "label": "return hold (0)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 88
+            }
+          ]
         },
         {
-          "id": "insert", "from": "comments", "to": "comments", "kind": "self",
-          "label": "store held comment", "delta": "unchanged",
-          "files": [{ "path": "docs/architecture.md", "startLine": 233 }]
+          "id": "insert",
+          "from": "comments",
+          "to": "comments",
+          "kind": "self",
+          "label": "store held comment",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "docs/architecture.md",
+              "startLine": 261
+            }
+          ]
         },
         {
-          "id": "post-hook", "from": "comments", "to": "intake", "kind": "sync",
-          "label": "comment_post", "delta": "unchanged",
-          "files": [{ "path": "jev-comment-triage.php", "startLine": 83 }]
+          "id": "post-hook",
+          "from": "comments",
+          "to": "intake",
+          "kind": "sync",
+          "label": "comment_post",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "jev-comment-triage.php",
+              "startLine": 84
+            }
+          ]
         },
         {
-          "id": "queue-meta", "from": "intake", "to": "comments", "kind": "sync",
-          "label": "write pending + base", "delta": "unchanged",
-          "files": [{ "path": "includes/intake.php", "startLine": 145 }]
+          "id": "queue-meta",
+          "from": "intake",
+          "to": "comments",
+          "kind": "sync",
+          "label": "write pending + base",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 145
+            }
+          ]
         },
         {
-          "id": "schedule", "from": "intake", "to": "cron", "kind": "async",
-          "label": "schedule + nudge drain", "delta": "unchanged",
-          "files": [{ "path": "includes/intake.php", "startLine": 147 }]
+          "id": "schedule",
+          "from": "intake",
+          "to": "cron",
+          "kind": "async",
+          "label": "schedule + nudge drain",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 154
+            }
+          ]
         },
         {
-          "id": "enqueue-return", "from": "intake", "to": "comments", "kind": "return",
-          "label": "enqueue returns", "delta": "unchanged",
-          "files": [{ "path": "includes/intake.php", "startLine": 133 }]
+          "id": "enqueue-return",
+          "from": "intake",
+          "to": "comments",
+          "kind": "return",
+          "label": "enqueue returns",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 133
+            }
+          ]
         },
         {
-          "id": "submit-return", "from": "comments", "to": "author", "kind": "return",
-          "label": "submission completes", "delta": "unchanged",
-          "files": [{ "path": "README.md", "startLine": 37 }]
+          "id": "submit-return",
+          "from": "comments",
+          "to": "author",
+          "kind": "return",
+          "label": "submission completes",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "README.md",
+              "startLine": 38
+            }
+          ]
         }
       ]
     },
     {
       "id": "successful-assessment",
       "title": "Background assessment succeeds",
-      "summary": "The normal Jev path, when no rule or enabled cache hit takes a shortcut.",
+      "summary": "The normal Jev path for comments, topics, and replies, when no rule or enabled cache hit takes a shortcut.",
       "delta": "unchanged",
       "participants": [
-        { "node": "drain", "label": "Drain" },
-        { "node": "comments", "label": "WordPress" },
-        { "node": "processor", "label": "Processor" },
-        { "node": "assessment", "label": "Assessment" },
-        { "node": "jev-provider", "label": "Provider" },
-        { "node": "jev-api", "label": "Jev API" }
+        {
+          "node": "drain",
+          "label": "Drain"
+        },
+        {
+          "node": "comments",
+          "label": "WordPress"
+        },
+        {
+          "node": "forum",
+          "label": "bbPress integration"
+        },
+        {
+          "node": "processor",
+          "label": "Processor"
+        },
+        {
+          "node": "assessment",
+          "label": "Assessment"
+        },
+        {
+          "node": "jev-provider",
+          "label": "Provider"
+        },
+        {
+          "node": "jev-api",
+          "label": "Jev API"
+        }
       ],
       "messages": [
         {
-          "id": "select", "from": "drain", "to": "comments", "kind": "sync",
-          "label": "select held + pending", "delta": "unchanged",
-          "files": [{ "path": "includes/scheduler.php", "startLine": 56 }]
+          "id": "select",
+          "from": "drain",
+          "to": "comments",
+          "kind": "sync",
+          "label": "comment_queue(): held + pending",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 91
+            }
+          ]
         },
         {
-          "id": "selected", "from": "comments", "to": "drain", "kind": "return",
-          "label": "up to 20 by default", "delta": "unchanged",
-          "files": [{ "path": "includes/scheduler.php", "startLine": 54 }]
+          "id": "selected",
+          "from": "comments",
+          "to": "drain",
+          "kind": "return",
+          "label": "up to 20 comments",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 54
+            }
+          ]
         },
         {
-          "id": "process", "from": "drain", "to": "processor", "kind": "sync",
-          "label": "process selected batch", "delta": "unchanged",
-          "files": [{ "path": "includes/scheduler.php", "startLine": 76 }]
+          "id": "select-forum",
+          "from": "drain",
+          "to": "forum",
+          "kind": "sync",
+          "label": "forum_queue(): pending + queued",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 56
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 271
+            }
+          ]
         },
         {
-          "id": "group", "from": "processor", "to": "processor", "kind": "self",
-          "label": "group + chunk by post", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 33 }]
+          "id": "selected-forum",
+          "from": "forum",
+          "to": "drain",
+          "kind": "return",
+          "label": "up to 20 topics + replies",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 271
+            }
+          ]
         },
         {
-          "id": "read-context", "from": "processor", "to": "comments", "kind": "sync",
-          "label": "read post + base", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 47 }, { "path": "includes/processor.php", "startLine": 78 }]
+          "id": "merge",
+          "from": "drain",
+          "to": "drain",
+          "kind": "self",
+          "label": "merge, oldest first, keep 20",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 56
+            },
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 58
+            },
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 60
+            }
+          ]
         },
         {
-          "id": "context", "from": "comments", "to": "processor", "kind": "return",
-          "label": "post + base decision", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 47 }, { "path": "includes/processor.php", "startLine": 78 }]
+          "id": "process",
+          "from": "drain",
+          "to": "processor",
+          "kind": "sync",
+          "label": "process_items(batch)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 60
+            }
+          ]
         },
         {
-          "id": "ask", "from": "processor", "to": "assessment", "kind": "sync",
-          "label": "Jev path: remaining comments", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 129 }]
+          "id": "group",
+          "from": "processor",
+          "to": "processor",
+          "kind": "self",
+          "label": "group by source + context",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 77
+            }
+          ]
         },
         {
-          "id": "evaluate", "from": "assessment", "to": "jev-provider", "kind": "sync",
-          "label": "post + 3 questions/comment", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 73 }, { "path": "includes/class-assessment.php", "startLine": 117 }]
+          "id": "read-context",
+          "from": "processor",
+          "to": "comments",
+          "kind": "sync",
+          "label": "read post/topic/forum + base",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 88
+            },
+            {
+              "path": "includes/processor.php",
+              "startLine": 121
+            }
+          ]
         },
         {
-          "id": "http", "from": "jev-provider", "to": "jev-api", "kind": "sync",
-          "label": "POST /systemone", "delta": "unchanged",
-          "files": [{ "path": "docs/architecture.md", "startLine": 55 }]
+          "id": "context",
+          "from": "comments",
+          "to": "processor",
+          "kind": "return",
+          "label": "context + base decision",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 88
+            },
+            {
+              "path": "includes/processor.php",
+              "startLine": 121
+            }
+          ]
         },
         {
-          "id": "http-answers", "from": "jev-api", "to": "jev-provider", "kind": "return",
-          "label": "typed answers", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 100 }]
+          "id": "ask",
+          "from": "processor",
+          "to": "assessment",
+          "kind": "sync",
+          "label": "Jev path: remaining items",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 171
+            }
+          ]
         },
         {
-          "id": "provider-answers", "from": "jev-provider", "to": "assessment", "kind": "return",
-          "label": "response", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 95 }]
+          "id": "evaluate",
+          "from": "assessment",
+          "to": "jev-provider",
+          "kind": "sync",
+          "label": "context + 3 questions/item",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 107
+            },
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 155
+            }
+          ]
         },
         {
-          "id": "validated", "from": "assessment", "to": "processor", "kind": "return",
-          "label": "validated assessments", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 155 }]
+          "id": "http",
+          "from": "jev-provider",
+          "to": "jev-api",
+          "kind": "sync",
+          "label": "POST /systemone",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "docs/architecture.md",
+              "startLine": 63
+            }
+          ]
         },
         {
-          "id": "decide", "from": "processor", "to": "processor", "kind": "self",
-          "label": "apply policy + base", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 174 }]
+          "id": "http-answers",
+          "from": "jev-api",
+          "to": "jev-provider",
+          "kind": "return",
+          "label": "typed answers",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 134
+            }
+          ]
         },
         {
-          "id": "persist", "from": "processor", "to": "comments", "kind": "sync",
-          "label": "store result + status", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 173 }]
+          "id": "provider-answers",
+          "from": "jev-provider",
+          "to": "assessment",
+          "kind": "return",
+          "label": "response",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 129
+            }
+          ]
+        },
+        {
+          "id": "validated",
+          "from": "assessment",
+          "to": "processor",
+          "kind": "return",
+          "label": "validated assessments",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 191
+            }
+          ]
+        },
+        {
+          "id": "decide",
+          "from": "processor",
+          "to": "processor",
+          "kind": "self",
+          "label": "apply policy + base",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 210
+            }
+          ]
+        },
+        {
+          "id": "persist",
+          "from": "processor",
+          "to": "comments",
+          "kind": "sync",
+          "label": "comment: store result + status",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 209
+            },
+            {
+              "path": "includes/processor.php",
+              "startLine": 251
+            }
+          ]
+        },
+        {
+          "id": "persist-forum",
+          "from": "processor",
+          "to": "forum",
+          "kind": "sync",
+          "label": "topic/reply: finalize_forum_post()",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 251
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 298
+            }
+          ]
         }
       ]
     },
@@ -332,92 +1274,255 @@
       "summary": "First and third failures are shown; the second also stays pending for a later drain.",
       "delta": "unchanged",
       "participants": [
-        { "node": "drain", "label": "Drain" },
-        { "node": "processor", "label": "Processor" },
-        { "node": "assessment", "label": "Assessment" },
-        { "node": "jev-provider", "label": "Provider" },
-        { "node": "comments", "label": "WordPress" }
+        {
+          "node": "drain",
+          "label": "Drain"
+        },
+        {
+          "node": "processor",
+          "label": "Processor"
+        },
+        {
+          "node": "assessment",
+          "label": "Assessment"
+        },
+        {
+          "node": "jev-provider",
+          "label": "Provider"
+        },
+        {
+          "node": "comments",
+          "label": "WordPress"
+        }
       ],
       "messages": [
         {
-          "id": "first-attempt", "from": "drain", "to": "processor", "kind": "sync",
-          "label": "pending comment: attempt 1", "delta": "unchanged",
-          "files": [{ "path": "includes/scheduler.php", "startLine": 56 }]
+          "id": "first-attempt",
+          "from": "drain",
+          "to": "processor",
+          "kind": "sync",
+          "label": "pending comment: attempt 1",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 46
+            }
+          ]
         },
         {
-          "id": "first-assess", "from": "processor", "to": "assessment", "kind": "sync",
-          "label": "assess", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+          "id": "first-assess",
+          "from": "processor",
+          "to": "assessment",
+          "kind": "sync",
+          "label": "assess",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 171
+            }
+          ]
         },
         {
-          "id": "first-request", "from": "assessment", "to": "jev-provider", "kind": "sync",
-          "label": "evaluate", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 95 }]
+          "id": "first-request",
+          "from": "assessment",
+          "to": "jev-provider",
+          "kind": "sync",
+          "label": "evaluate",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 129
+            }
+          ]
         },
         {
-          "id": "first-error", "from": "jev-provider", "to": "assessment", "kind": "return",
-          "label": "outage / timeout", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 97 }]
+          "id": "first-error",
+          "from": "jev-provider",
+          "to": "assessment",
+          "kind": "return",
+          "label": "outage / timeout",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 131
+            }
+          ]
         },
         {
-          "id": "first-failure", "from": "assessment", "to": "processor", "kind": "return",
-          "label": "failure; no body split", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 57 }]
+          "id": "first-failure",
+          "from": "assessment",
+          "to": "processor",
+          "kind": "return",
+          "label": "failure; no body split",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 90
+            }
+          ]
         },
         {
-          "id": "keep-pending", "from": "processor", "to": "comments", "kind": "sync",
-          "label": "save attempt 1; keep pending", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 198 }]
+          "id": "keep-pending",
+          "from": "processor",
+          "to": "comments",
+          "kind": "sync",
+          "label": "save attempt 1; keep pending",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 237
+            }
+          ]
         },
         {
-          "id": "first-saved", "from": "comments", "to": "processor", "kind": "return",
-          "label": "write returns (unchecked)", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 199 }]
+          "id": "first-saved",
+          "from": "comments",
+          "to": "processor",
+          "kind": "return",
+          "label": "write returns (unchecked)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 237
+            }
+          ]
         },
         {
-          "id": "first-tick-ends", "from": "processor", "to": "drain", "kind": "return",
-          "label": "tick completes", "delta": "unchanged",
-          "files": [{ "path": "includes/scheduler.php", "startLine": 76 }]
+          "id": "first-tick-ends",
+          "from": "processor",
+          "to": "drain",
+          "kind": "return",
+          "label": "tick completes",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 60
+            }
+          ]
         },
         {
-          "id": "third-attempt", "from": "drain", "to": "processor", "kind": "sync",
-          "label": "later: attempt 3 (2 omitted)", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 198 }]
+          "id": "third-attempt",
+          "from": "drain",
+          "to": "processor",
+          "kind": "sync",
+          "label": "later: attempt 3 (2 omitted)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 237
+            }
+          ]
         },
         {
-          "id": "third-assess", "from": "processor", "to": "assessment", "kind": "sync",
-          "label": "assess again", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+          "id": "third-assess",
+          "from": "processor",
+          "to": "assessment",
+          "kind": "sync",
+          "label": "assess again",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 171
+            }
+          ]
         },
         {
-          "id": "third-request", "from": "assessment", "to": "jev-provider", "kind": "sync",
-          "label": "evaluate", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 95 }]
+          "id": "third-request",
+          "from": "assessment",
+          "to": "jev-provider",
+          "kind": "sync",
+          "label": "evaluate",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 129
+            }
+          ]
         },
         {
-          "id": "third-error", "from": "jev-provider", "to": "assessment", "kind": "return",
-          "label": "outage / timeout", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 97 }]
+          "id": "third-error",
+          "from": "jev-provider",
+          "to": "assessment",
+          "kind": "return",
+          "label": "outage / timeout",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 131
+            }
+          ]
         },
         {
-          "id": "third-failure", "from": "assessment", "to": "processor", "kind": "return",
-          "label": "failure", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 57 }]
+          "id": "third-failure",
+          "from": "assessment",
+          "to": "processor",
+          "kind": "return",
+          "label": "failure",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 90
+            }
+          ]
         },
         {
-          "id": "abandon", "from": "processor", "to": "comments", "kind": "sync",
-          "label": "attempt 3: remove pending; hold", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 198 }, { "path": "jev-comment-triage.php", "startLine": 29 }]
+          "id": "abandon",
+          "from": "processor",
+          "to": "comments",
+          "kind": "sync",
+          "label": "attempt 3: remove pending; hold",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 237
+            },
+            {
+              "path": "jev-comment-triage.php",
+              "startLine": 29
+            }
+          ]
         },
         {
-          "id": "third-saved", "from": "comments", "to": "processor", "kind": "return",
-          "label": "write returns (unchecked)", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 199 }]
+          "id": "third-saved",
+          "from": "comments",
+          "to": "processor",
+          "kind": "return",
+          "label": "write returns (unchecked)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 237
+            }
+          ]
         },
         {
-          "id": "third-tick-ends", "from": "processor", "to": "drain", "kind": "return",
-          "label": "tick completes", "delta": "unchanged",
-          "files": [{ "path": "includes/scheduler.php", "startLine": 76 }]
+          "id": "third-tick-ends",
+          "from": "processor",
+          "to": "drain",
+          "kind": "return",
+          "label": "tick completes",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/scheduler.php",
+              "startLine": 60
+            }
+          ]
         }
       ]
     },
@@ -427,55 +1532,695 @@
       "summary": "Example: a two-comment request is rejected, the first succeeds alone, and the second is rejected alone.",
       "delta": "unchanged",
       "participants": [
-        { "node": "processor", "label": "Processor" },
-        { "node": "assessment", "label": "Assessment" },
-        { "node": "jev-provider", "label": "Provider" }
+        {
+          "node": "processor",
+          "label": "Processor"
+        },
+        {
+          "node": "assessment",
+          "label": "Assessment"
+        },
+        {
+          "node": "jev-provider",
+          "label": "Provider"
+        }
       ],
       "messages": [
         {
-          "id": "two-comments", "from": "processor", "to": "assessment", "kind": "sync",
-          "label": "assess 2 comments", "delta": "unchanged",
-          "files": [{ "path": "includes/processor.php", "startLine": 135 }]
+          "id": "two-comments",
+          "from": "processor",
+          "to": "assessment",
+          "kind": "sync",
+          "label": "assess 2 comments",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 171
+            }
+          ]
         },
         {
-          "id": "both-request", "from": "assessment", "to": "jev-provider", "kind": "sync",
-          "label": "evaluate both", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 49 }]
+          "id": "both-request",
+          "from": "assessment",
+          "to": "jev-provider",
+          "kind": "sync",
+          "label": "evaluate both",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 82
+            }
+          ]
         },
         {
-          "id": "both-rejected", "from": "jev-provider", "to": "assessment", "kind": "return",
-          "label": "HTTP 422", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 213 }]
+          "id": "both-rejected",
+          "from": "jev-provider",
+          "to": "assessment",
+          "kind": "return",
+          "label": "HTTP 422",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 249
+            }
+          ]
         },
         {
-          "id": "split", "from": "assessment", "to": "assessment", "kind": "self",
-          "label": "split into single comments", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 61 }]
+          "id": "split",
+          "from": "assessment",
+          "to": "assessment",
+          "kind": "self",
+          "label": "split into single comments",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 94
+            }
+          ]
         },
         {
-          "id": "first-single", "from": "assessment", "to": "jev-provider", "kind": "sync",
-          "label": "evaluate first", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 63 }]
+          "id": "first-single",
+          "from": "assessment",
+          "to": "jev-provider",
+          "kind": "sync",
+          "label": "evaluate first",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 96
+            }
+          ]
         },
         {
-          "id": "first-valid", "from": "jev-provider", "to": "assessment", "kind": "return",
-          "label": "valid answers", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 155 }]
+          "id": "first-valid",
+          "from": "jev-provider",
+          "to": "assessment",
+          "kind": "return",
+          "label": "valid answers",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 191
+            }
+          ]
         },
         {
-          "id": "second-single", "from": "assessment", "to": "jev-provider", "kind": "sync",
-          "label": "evaluate second", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 63 }]
+          "id": "second-single",
+          "from": "assessment",
+          "to": "jev-provider",
+          "kind": "sync",
+          "label": "evaluate second",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 96
+            }
+          ]
         },
         {
-          "id": "second-rejected", "from": "jev-provider", "to": "assessment", "kind": "return",
-          "label": "HTTP 422", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 58 }]
+          "id": "second-rejected",
+          "from": "jev-provider",
+          "to": "assessment",
+          "kind": "return",
+          "label": "HTTP 422",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 91
+            }
+          ]
         },
         {
-          "id": "isolated-results", "from": "assessment", "to": "processor", "kind": "return",
-          "label": "first result + second error", "delta": "unchanged",
-          "files": [{ "path": "includes/class-assessment.php", "startLine": 63 }]
+          "id": "isolated-results",
+          "from": "assessment",
+          "to": "processor",
+          "kind": "return",
+          "label": "first result + second error",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/class-assessment.php",
+              "startLine": 96
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forum-submission",
+      "title": "Forum topic or reply submission",
+      "summary": "A new topic or reply is held as pending and queued; the request makes no Jev call.",
+      "delta": "unchanged",
+      "participants": [
+        {
+          "node": "forum-author",
+          "label": "Forum author"
+        },
+        {
+          "node": "bbpress",
+          "label": "bbPress"
+        },
+        {
+          "node": "forum",
+          "label": "bbPress integration"
+        },
+        {
+          "node": "intake",
+          "label": "Intake"
+        },
+        {
+          "node": "cron",
+          "label": "WP-Cron"
+        }
+      ],
+      "messages": [
+        {
+          "id": "forum-submit",
+          "from": "forum-author",
+          "to": "bbpress",
+          "kind": "sync",
+          "label": "submit topic or reply",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "README.md",
+              "startLine": 90
+            }
+          ]
+        },
+        {
+          "id": "bbpress-decides",
+          "from": "bbpress",
+          "to": "bbpress",
+          "kind": "self",
+          "label": "Akismet + moderation keys set status",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 31
+            }
+          ]
+        },
+        {
+          "id": "pre-insert",
+          "from": "bbpress",
+          "to": "forum",
+          "kind": "sync",
+          "label": "bbp_new_{topic,reply}_pre_insert",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 32
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 101
+            }
+          ]
+        },
+        {
+          "id": "forum-skip",
+          "from": "forum",
+          "to": "forum",
+          "kind": "self",
+          "label": "skip moderators, other statuses",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 73
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 84
+            }
+          ]
+        },
+        {
+          "id": "forum-base",
+          "from": "forum",
+          "to": "forum",
+          "kind": "self",
+          "label": "remember base: publish 1 / pending 0",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 84
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 117
+            }
+          ]
+        },
+        {
+          "id": "forum-hold",
+          "from": "forum",
+          "to": "bbpress",
+          "kind": "return",
+          "label": "return status pending",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 118
+            }
+          ]
+        },
+        {
+          "id": "forum-insert",
+          "from": "bbpress",
+          "to": "bbpress",
+          "kind": "self",
+          "label": "store pending post",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 101
+            }
+          ]
+        },
+        {
+          "id": "forum-new-hook",
+          "from": "bbpress",
+          "to": "forum",
+          "kind": "sync",
+          "label": "bbp_new_topic / bbp_new_reply",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 34
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 128
+            }
+          ]
+        },
+        {
+          "id": "forum-queue",
+          "from": "forum",
+          "to": "intake",
+          "kind": "sync",
+          "label": "queue_item(item, base)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 139
+            },
+            {
+              "path": "includes/intake.php",
+              "startLine": 201
+            }
+          ]
+        },
+        {
+          "id": "forum-meta",
+          "from": "intake",
+          "to": "bbpress",
+          "kind": "sync",
+          "label": "write pending + base post meta",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 201
+            }
+          ]
+        },
+        {
+          "id": "forum-schedule",
+          "from": "intake",
+          "to": "cron",
+          "kind": "async",
+          "label": "schedule + nudge drain",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 153
+            }
+          ]
+        },
+        {
+          "id": "forum-return",
+          "from": "bbpress",
+          "to": "forum-author",
+          "kind": "return",
+          "label": "post saved as pending",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "README.md",
+              "startLine": 90
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "comment-edit",
+      "title": "Edited comment is triaged again",
+      "summary": "Changed content from an untrusted editor is held and queued again; the base cannot rise.",
+      "delta": "unchanged",
+      "participants": [
+        {
+          "node": "author",
+          "label": "Author"
+        },
+        {
+          "node": "comments",
+          "label": "WordPress"
+        },
+        {
+          "node": "intake",
+          "label": "Intake"
+        },
+        {
+          "node": "cron",
+          "label": "WP-Cron"
+        }
+      ],
+      "messages": [
+        {
+          "id": "edit-submit",
+          "from": "author",
+          "to": "comments",
+          "kind": "sync",
+          "label": "save edited comment",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "README.md",
+              "startLine": 60
+            }
+          ]
+        },
+        {
+          "id": "edit-filter",
+          "from": "comments",
+          "to": "intake",
+          "kind": "sync",
+          "label": "wp_update_comment_data",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "jev-comment-triage.php",
+              "startLine": 86
+            },
+            {
+              "path": "includes/intake.php",
+              "startLine": 222
+            }
+          ]
+        },
+        {
+          "id": "edit-skip",
+          "from": "intake",
+          "to": "intake",
+          "kind": "self",
+          "label": "skip moderators, trusted, unchanged text",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 234
+            },
+            {
+              "path": "includes/intake.php",
+              "startLine": 240
+            }
+          ]
+        },
+        {
+          "id": "edit-base",
+          "from": "intake",
+          "to": "intake",
+          "kind": "self",
+          "label": "retriage_base(): status before edit",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 187
+            },
+            {
+              "path": "includes/intake.php",
+              "startLine": 250
+            }
+          ]
+        },
+        {
+          "id": "edit-hold",
+          "from": "intake",
+          "to": "comments",
+          "kind": "return",
+          "label": "comment_approved = 0",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 251
+            }
+          ]
+        },
+        {
+          "id": "edit-save",
+          "from": "comments",
+          "to": "comments",
+          "kind": "self",
+          "label": "store held comment",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 222
+            }
+          ]
+        },
+        {
+          "id": "edit-action",
+          "from": "comments",
+          "to": "intake",
+          "kind": "sync",
+          "label": "edit_comment",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "jev-comment-triage.php",
+              "startLine": 87
+            },
+            {
+              "path": "includes/intake.php",
+              "startLine": 261
+            }
+          ]
+        },
+        {
+          "id": "edit-requeue",
+          "from": "intake",
+          "to": "comments",
+          "kind": "sync",
+          "label": "clear result + attempts; pending + base",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 201
+            }
+          ]
+        },
+        {
+          "id": "edit-schedule",
+          "from": "intake",
+          "to": "cron",
+          "kind": "async",
+          "label": "schedule + nudge drain",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/intake.php",
+              "startLine": 153
+            }
+          ]
+        },
+        {
+          "id": "edit-return",
+          "from": "comments",
+          "to": "author",
+          "kind": "return",
+          "label": "edit saved, held",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "README.md",
+              "startLine": 60
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forum-finalize",
+      "title": "Forum decision is applied",
+      "summary": "Decisions go through bbPress moderation functions; automated spam is not reported to Akismet.",
+      "delta": "unchanged",
+      "participants": [
+        {
+          "node": "processor",
+          "label": "Processor"
+        },
+        {
+          "node": "forum",
+          "label": "bbPress integration"
+        },
+        {
+          "node": "bbpress",
+          "label": "bbPress"
+        }
+      ],
+      "messages": [
+        {
+          "id": "ff-decide",
+          "from": "processor",
+          "to": "processor",
+          "kind": "self",
+          "label": "decide(assessment, base)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 210
+            }
+          ]
+        },
+        {
+          "id": "ff-meta",
+          "from": "processor",
+          "to": "bbpress",
+          "kind": "sync",
+          "label": "store result; clear pending + base",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 212
+            },
+            {
+              "path": "includes/processor.php",
+              "startLine": 220
+            }
+          ]
+        },
+        {
+          "id": "ff-finalize",
+          "from": "processor",
+          "to": "forum",
+          "kind": "sync",
+          "label": "finalize_forum_post(kind, id, decision)",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 251
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 298
+            }
+          ]
+        },
+        {
+          "id": "ff-akismet",
+          "from": "forum",
+          "to": "forum",
+          "kind": "self",
+          "label": "spam only: pause Akismet submit_post",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 321
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 327
+            }
+          ]
+        },
+        {
+          "id": "ff-moderate",
+          "from": "forum",
+          "to": "bbpress",
+          "kind": "sync",
+          "label": "bbp_spam_* / bbp_approve_* / bbp_unapprove_*",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 304
+            },
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 308
+            }
+          ]
+        },
+        {
+          "id": "ff-done",
+          "from": "bbpress",
+          "to": "forum",
+          "kind": "return",
+          "label": "status changed; Akismet listener restored",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 334
+            }
+          ]
+        },
+        {
+          "id": "ff-return",
+          "from": "forum",
+          "to": "processor",
+          "kind": "return",
+          "label": "returns",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/bbpress.php",
+              "startLine": 298
+            }
+          ]
+        },
+        {
+          "id": "ff-hook",
+          "from": "processor",
+          "to": "processor",
+          "kind": "self",
+          "label": "do_action jct_triaged_forum_post",
+          "delta": "unchanged",
+          "files": [
+            {
+              "path": "includes/processor.php",
+              "startLine": 228
+            }
+          ]
         }
       ]
     }
@@ -485,11 +2230,39 @@
       "id": "system-overview",
       "title": "System overview",
       "lens": "architecture",
-      "summary": "How WordPress, triage, the provider, and Jev interact.",
+      "summary": "How WordPress, bbPress, triage, the provider, and Jev interact.",
       "scope": {
         "kind": "selection",
-        "nodes": ["comments", "cron", "cache", "intake", "drain", "processor", "assessment", "jev-provider", "jev-api"],
-        "edges": ["comments-intake", "intake-comments", "intake-cron", "cron-drain", "drain-processor", "processor-assessment", "assessment-provider", "provider-api", "processor-cache", "processor-comments"]
+        "nodes": [
+          "comments",
+          "bbpress",
+          "cron",
+          "cache",
+          "intake",
+          "forum",
+          "drain",
+          "processor",
+          "assessment",
+          "jev-provider",
+          "jev-api"
+        ],
+        "edges": [
+          "comments-intake",
+          "intake-comments",
+          "intake-cron",
+          "cron-drain",
+          "drain-processor",
+          "processor-assessment",
+          "assessment-provider",
+          "provider-api",
+          "processor-cache",
+          "processor-comments",
+          "bbpress-forum",
+          "forum-bbpress",
+          "forum-intake",
+          "drain-forum",
+          "processor-forum"
+        ]
       }
     },
     {
@@ -499,33 +2272,102 @@
       "summary": "Default thresholds; the base decision limits publication.",
       "scope": {
         "kind": "selection",
-        "nodes": ["assessment", "processor", "policy", "base", "spam", "held", "approved"],
-        "edges": ["assessment-processor", "processor-policy", "policy-spam", "policy-held", "policy-base", "base-approved", "base-held"]
+        "nodes": [
+          "assessment",
+          "processor",
+          "policy",
+          "base",
+          "spam",
+          "held",
+          "approved"
+        ],
+        "edges": [
+          "assessment-processor",
+          "processor-policy",
+          "policy-spam",
+          "policy-held",
+          "policy-base",
+          "base-approved",
+          "base-held"
+        ]
       }
     },
     {
       "id": "submit-comment",
       "title": "Eligible comment submission",
       "lens": "data-flow",
-      "scope": { "kind": "selection", "flows": ["eligible-submission"] }
+      "scope": {
+        "kind": "selection",
+        "flows": [
+          "eligible-submission"
+        ]
+      }
+    },
+    {
+      "id": "submit-forum-post",
+      "title": "Forum topic or reply submission",
+      "lens": "data-flow",
+      "scope": {
+        "kind": "selection",
+        "flows": [
+          "forum-submission"
+        ]
+      }
+    },
+    {
+      "id": "edit-comment",
+      "title": "Edited comment is triaged again",
+      "lens": "data-flow",
+      "scope": {
+        "kind": "selection",
+        "flows": [
+          "comment-edit"
+        ]
+      }
     },
     {
       "id": "background-success",
       "title": "Background assessment succeeds",
       "lens": "data-flow",
-      "scope": { "kind": "selection", "flows": ["successful-assessment"] }
+      "scope": {
+        "kind": "selection",
+        "flows": [
+          "successful-assessment"
+        ]
+      }
+    },
+    {
+      "id": "forum-decision",
+      "title": "Forum decision is applied",
+      "lens": "data-flow",
+      "scope": {
+        "kind": "selection",
+        "flows": [
+          "forum-finalize"
+        ]
+      }
     },
     {
       "id": "outage-retry",
       "title": "Retries after provider outages",
       "lens": "data-flow",
-      "scope": { "kind": "selection", "flows": ["outage-retries"] }
+      "scope": {
+        "kind": "selection",
+        "flows": [
+          "outage-retries"
+        ]
+      }
     },
     {
       "id": "split-rejected-request",
       "title": "Rejected request is split",
       "lens": "data-flow",
-      "scope": { "kind": "selection", "flows": ["body-rejection"] }
+      "scope": {
+        "kind": "selection",
+        "flows": [
+          "body-rejection"
+        ]
+      }
     }
   ]
 }

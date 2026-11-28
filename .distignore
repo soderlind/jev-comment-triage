@@ -31,6 +31,9 @@ composer.lock
 i18n-map.json
 package.json
 package-lock.json
+playwright.config.ts
+playwright-report/
+test-results/
 phpcs.xml
 phpcs.xml.dist
 phpunit.xml

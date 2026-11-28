@@ -7,6 +7,8 @@ judges them asynchronously with TypeSafe's Jev model through AI Provider for
 Jev, and then routes them to approved, held, or spam status. The design keeps the
 remote model call off the comment-submission request and preserves WordPress's
 own moderation decision as an upper bound on what the plugin may publish.
+When bbPress is active, forum topics and replies go through the same pipeline;
+edited comments, topics, and replies are triaged again.
 
 This document describes the current implementation in `jev-comment-triage.php`
 and the focused modules under `includes/`.
@@ -39,21 +41,27 @@ Not included:
 
 ```mermaid
 flowchart LR
-    Visitor[Comment author] --> WordPress[WordPress comment pipeline]
+    Visitor[Comment author] -->|submit / edit| WordPress[WordPress comment pipeline]
+    ForumUser[Forum author] -->|submit / edit| BbPress[bbPress topic and reply pipeline]
     WordPress --> Plugin[Jev Comment Triage]
-    Plugin --> Meta[(WordPress comment meta)]
-    Plugin --> Cache[(Network site transients: spam cache)]
+    BbPress -->|when bbPress is active| Plugin
+    Plugin --> Meta[(Comment meta)]
+    Plugin --> PostMeta[(Topic and reply post meta)]
+    Plugin --> Cache[(Network site transients: shared spam cache)]
     Plugin --> Cron[WP-Cron]
     Cron --> Plugin
     Plugin --> Provider[AI Provider for Jev]
     Provider --> TypeSafe[TypeSafe Jev API]
     Plugin --> Releases[GitHub Releases]
     Plugin --> Status[WordPress comment status]
-    Moderator[Site moderator] --> Status
+    Plugin -->|bbPress moderation functions| ForumStatus[Topic and reply status]
+    Plugin -. paused while marking spam .-> Akismet[bbPress Akismet listener]
+    Moderator[Site or forum moderator] --> Status
+    Moderator --> ForumStatus
 ```
 
-The TypeSafe call crosses an external-service trust boundary. Comment text, post
-title and content, link count, and optionally author details leave WordPress
+The TypeSafe call crosses an external-service trust boundary. Comment, topic, or
+reply text, the context's title and content, link count, and optionally author details leave WordPress
 through `AiProviderForJev\evaluate()`. The `jct_include_author_details` filter can
 exclude author name, email, and URL, but it does not exclude the comment or post.
 The updater separately checks this repository's public GitHub releases every
@@ -69,11 +77,12 @@ Implementations live in focused files under `includes/`.
 |---|---|---|---|
 | Composition root | `jev-comment-triage.php` | Defines constants, loads modules, initializes updates, and registers hooks | WordPress hooks |
 | Shared helpers | `includes/core.php` | Provider readiness, payload shaping, counting, and eligibility helpers | Namespaced helper functions |
-| Intake | `includes/intake.php` | Holds eligible comments, captures WordPress's decision, persists queue markers, and takes regular comments away from the AI plugin's Comment Moderation experiment | `defer()`, `enqueue()`, `yield_ai_moderation()` |
-| Scheduler | `includes/scheduler.php` | Registers the minute interval, schedules work, selects a bounded batch, and limits overlap | `add_schedule()`, `ensure_scheduled()`, `drain()` |
+| Intake | `includes/intake.php` | Holds eligible comments, captures WordPress's decision, persists queue markers, requeues edited comments, and takes regular comments away from the AI plugin's Comment Moderation experiment | `defer()`, `enqueue()`, `hold_edited_comment()`, `queue_edited_comment()`, `queue_item()`, `yield_ai_moderation()` |
+| Scheduler | `includes/scheduler.php` | Registers the minute interval, schedules work, selects a bounded batch of comments and forum posts, and limits overlap | `add_schedule()`, `ensure_scheduled()`, `drain()`, `comment_queue()` |
 | Assessment | `includes/class-assessment.php` | Constructs Jev requests, validates answers, and isolates request-body rejections | `Assessment::assess()` |
 | Decision policy | `includes/policy.php` | Applies risk-scaled thresholds to normalized judgments | `thresholds()`, `decide()` |
-| Processor | `includes/processor.php` | Batches comments, applies rules/cache, records retries, persists assessments, and changes status | `process_comments()` |
+| Processor | `includes/processor.php` | Batches triage items (comments, topics, replies) by context, applies rules/cache, records retries, persists assessments, and changes status | `process_items()`, `process_comments()` |
+| bbPress integration | `includes/bbpress.php` | Holds and requeues new and edited topics and replies, selects queued forum posts, and applies decisions with bbPress moderation functions | `register_bbpress()`, `forum_queue()`, `finalize_forum_post()` |
 | Spam cache | `includes/spam-cache.php` | Keys confident spam verdicts and atomically records network-wide counters | Cache helper functions |
 | Administration | `includes/admin.php` | Displays results and registers privacy and cron notices | WordPress admin callbacks |
 | Cleanup | `uninstall.php` | Removes schedules, transients, options, and plugin-owned metadata | WordPress uninstall entry point |
@@ -103,6 +112,7 @@ flowchart TD
     Cache[includes/spam-cache.php]
     Core[includes/core.php]
     Admin[includes/admin.php]
+    BbPress[includes/bbpress.php]
     Provider[AI Provider for Jev]
 
     Root --> Intake
@@ -113,10 +123,18 @@ flowchart TD
     Root --> Cache
     Root --> Core
     Root --> Admin
+    Root --> BbPress
     Intake --> Core
     Intake --> Scheduler
+    Intake --> Processor
     Scheduler --> Core
     Scheduler --> Processor
+    Scheduler --> BbPress
+    BbPress --> Core
+    BbPress --> Intake
+    BbPress --> Scheduler
+    BbPress --> Admin
+    Processor --> BbPress
     Processor --> Core
     Processor --> Assessment
     Processor --> Policy
@@ -133,6 +151,16 @@ inject a different `Assessment`, and `Assessment` itself depends only on its
 callable adapter, root constants, and payload shaping from `core.php`. Provider
 configuration checks live in `core.php`; cache keys read the configured model
 in `spam-cache.php`.
+
+`bbpress.php` is not a leaf. `scheduler.php` calls its `forum_queue()` and
+`processor.php` calls `finalize_forum_post()` for topics and replies. In turn,
+`bbpress.php` reuses `queue_item()`, `edit_registry()`, and `retriage_base()`
+from intake, `queue_meta_query()` from the scheduler, `provider_ready()` from
+core, and the admin column helpers. Intake calls the processor's
+`item_meta()`/`update_item_meta()`/`delete_item_meta()` helpers so one code
+path handles comment meta and post meta. These are runtime function calls
+between modules loaded by the root, not `require` statements, so the
+cycles are harmless.
 
 The root defines constants before requiring modules, and requires dependencies
 before their consumers. Because the function modules are not Composer
@@ -248,11 +276,13 @@ Trigger: the recurring or immediate `jct_drain` WP-Cron event.
 1. `drain()` exits when the provider is unavailable or the `jct_draining`
    transient already exists.
 2. It sets a ten-minute lock transient and selects up to `jct_batch_size`
-   comments, default 20, ordered oldest first.
-3. The query includes only held comments that have `_jct_pending` and do not
-   have `_jev_triage`.
-4. `process_comments()` groups the batch by post, reads each post once, and
-   splits each group into chunks of `jct_comments_per_request` (default 20).
+   comments and up to as many bbPress topics and replies, merges them oldest
+   first, and keeps the first `jct_batch_size` (default 20).
+3. The queries include only held comments, or pending topics and replies, that
+   have `_jct_pending` and do not have `_jev_triage`.
+4. `process_items()` groups the batch by type and context (a comment's post, a
+   topic's forum, or a reply's topic), reads each context once, and splits each
+   group into chunks of `jct_comments_per_request` (default 20).
 5. For each comment, `process_chunk()` reads the base decision, then:
    - empty content removes pending/base metadata and applies the base decision;
    - with `jct_min_words` above zero, a link-free comment with fewer words is
@@ -286,7 +316,32 @@ Trigger: the recurring or immediate `jct_drain` WP-Cron event.
     - everything else returns hold.
 11. It stores the assessment and decision in `_jev_triage`, removes
     pending/base metadata, updates the status through `finalize()`, and fires
-    `jct_triaged`.
+    `jct_triaged` for comments or `jct_triaged_forum_post` for topics and
+    replies. For forum posts, `finalize()` calls `bbp_approve_*`,
+    `bbp_unapprove_*`, or `bbp_spam_*`; spam marking temporarily removes the
+    bbPress Akismet extension's `submit_post` listener so automated decisions
+    are not reported as a moderator's verdict.
+
+## Edits and forum posts
+
+- **Comment edits.** `hold_edited_comment()` on `wp_update_comment_data` holds
+  an approved or held regular comment whose content changed, unless the editor
+  can `moderate_comments` or the author is trusted. `queue_edited_comment()`
+  on `edit_comment` calls `queue_item()`, which deletes `_jev_triage` and
+  `_jct_attempts` and sets `_jct_pending` and `_jct_base`.
+- **Edit base.** `retriage_base()` uses the status before the edit, so an edit
+  cannot publish a held item. An item that is still queued (pending and not yet
+  assessed) keeps its stored base.
+- **bbPress topics and replies.** `register_bbpress()` runs on
+  `plugins_loaded` and only when bbPress is loaded. New posts are held on
+  `bbp_new_{topic,reply}_pre_insert` at `PHP_INT_MAX`, after Akismet and
+  bbPress moderation keys; bbPress's chosen status (`publish` or `pending`)
+  becomes the base, and other statuses are skipped. Forum moderators
+  (`moderate` on the parent) are exempt. Edits use
+  `bbp_edit_{topic,reply}_pre_insert` and `bbp_edit_{topic,reply}` the same
+  way as comment edits. Metadata uses the same keys as post meta.
+- **Handoff.** `edit_registry()` passes a hold from a pre-save filter to the
+  matching after-save action within one request.
 12. `record_cache_stats()` adds this run's cache counters to the
     network-wide counters with one atomic SQL increment each, and a `finally`
     block removes the lock.
@@ -372,13 +427,14 @@ second drain process.
 | Hook | Contract |
 |---|---|
 | `jct_thresholds` | Filters `spam`, `abusive`, `relevance`, and `clean` thresholds; receives the assessment as its second argument. Values are merged over `DEFAULT_THRESHOLDS`; missing or nonnumeric keys fall back to the default, and all values are clamped to `0..1`. The 1.4.0 filter of the same name also used a `spam` key with the same meaning; its other keys are ignored. |
-| `jct_batch_size` | Filters the maximum number of comments selected by one drain. |
+| `jct_batch_size` | Filters the maximum number of comments and forum posts selected by one drain. |
 | `jct_comments_per_request` | Filters how many comments on one post share a Jev request (minimum 1). |
 | `jct_spam_cache` | Return `true` to apply cached spam verdicts without calling Jev. Default `false` (shadow mode). |
 | `jct_min_words` | Holds link-free comments with fewer words without calling Jev. Default `0` (off). |
 | `jct_include_author_details` | Controls whether name, email, and URL are included in Jev state. |
 | `jct_override_ai_moderation` | Default `true`. While the provider is ready, `yield_ai_moderation()` removes regular comment types from the AI plugin's `wpai_comment_moderation_comment_types` for comments that `defer()` held in the same request, so its experiment skips `ai/comment-analysis` and auto-moderation for comments Jev owns. Direct `wp_insert_comment()` calls are left to the AI plugin. Return `false` to keep both. |
-| `jct_triaged` | Fires after every stored decision (from Jev, the cache, or the short-comment rule) with comment ID, assessment, and decision. It does not fire for empty comments, retries, or abandoned comments. |
+| `jct_triaged` | Fires after every stored comment decision (from Jev, the cache, or the short-comment rule) with comment ID, assessment, and decision. It does not fire for empty comments, retries, or abandoned comments. |
+| `jct_triaged_forum_post` | Same as `jct_triaged` for bbPress topics and replies, with post ID, assessment, decision, and type (`topic` or `reply`). |
 
 ## Operational behavior
 
@@ -483,6 +539,11 @@ both engines.
 | Change updater or release artifact behavior | Updater bootstrap, `.distignore`, and `.github/workflows/` | Composer dependencies, installation docs, and archive-content checks |
 
 ## Current limitations and open questions
+
+- Topic and reply edits made in the wp-admin post editor, and comments or forum
+  posts created programmatically without the submission hooks, are not triaged.
+- A reply posted while its topic is held by Jev is forced pending by bbPress,
+  so its base is hold and it stays held even if the topic is later approved.
 
 - The transient lock is not atomic; overlapping drains remain possible under a
   race or after a lock expires during a long batch.

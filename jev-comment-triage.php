@@ -1,10 +1,10 @@
 <?php
 /**
  * Plugin Name: Jev Comment Triage
- * Description: Uses AI Provider for Jev to judge pending comments for relevance to their post, spam, and abuse, and acts only on confident answers.
+ * Description: Uses AI Provider for Jev to judge pending comments, and bbPress topics and replies, for relevance, spam, and abuse, and acts only on confident answers.
  * Requires Plugins: ai-provider-for-jev
  * Requires PHP: 8.3
- * Version: 2.3.0
+ * Version: 2.4.0
  * License: GPL-2.0-or-later
  * Text Domain: jev-comment-triage
  * Domain Path: /languages
@@ -70,6 +70,7 @@ require_once __DIR__ . '/includes/processor.php';
 require_once __DIR__ . '/includes/scheduler.php';
 require_once __DIR__ . '/includes/intake.php';
 require_once __DIR__ . '/includes/admin.php';
+require_once __DIR__ . '/includes/bbpress.php';
 
 add_action( 'init', __NAMESPACE__ . '\\load_textdomain' );
 
@@ -81,6 +82,11 @@ register_deactivation_hook( PLUGIN_FILE, __NAMESPACE__ . '\\deactivate' );
 // Capture the effective WordPress decision after earlier moderation filters.
 add_filter( 'pre_comment_approved', __NAMESPACE__ . '\\defer', PHP_INT_MAX, 2 );
 add_action( 'comment_post', __NAMESPACE__ . '\\enqueue', 10, 3 );
+// Triage edited comments again; the filter sees the status about to be saved.
+add_filter( 'wp_update_comment_data', __NAMESPACE__ . '\\hold_edited_comment', PHP_INT_MAX, 2 );
+add_action( 'edit_comment', __NAMESPACE__ . '\\queue_edited_comment' );
+// bbPress may load before or after this plugin.
+add_action( 'plugins_loaded', __NAMESPACE__ . '\\register_bbpress' );
 // Replace the AI plugin's Comment Moderation experiment (ai/comment-analysis) for comments Jev holds.
 add_filter( 'wpai_comment_moderation_comment_types', __NAMESPACE__ . '\\yield_ai_moderation', PHP_INT_MAX, 2 );
 add_action( EVENT, __NAMESPACE__ . '\\drain' );
