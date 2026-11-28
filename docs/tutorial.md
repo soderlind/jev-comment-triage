@@ -1,7 +1,7 @@
 # Using Jev in WordPress
 
-This tutorial shows how to use Jev to moderate WordPress comments with the
-Jev Comment Triage plugin. It follows TypeSafe's model: send state and several
+This tutorial shows how to use Jev to moderate WordPress comments, and bbPress
+topics and replies, with the Jev Comment Triage plugin. It follows TypeSafe's model: send state and several
 small, typed questions, then use the structured answers and their confidence
 in ordinary PHP code.
 
@@ -16,7 +16,9 @@ fail-closed WordPress policy:
 - uncertain or off-topic comments are held.
 
 The plugin calls Jev asynchronously through WP-Cron, so the comment submission
-request does not wait for the remote model.
+request does not wait for the remote model. Edited comments are checked again,
+and when bbPress is active, forum topics and replies go through the same
+pipeline and policy.
 
 ## Before you begin
 
@@ -26,7 +28,9 @@ You need:
 - PHP 8.3 or later;
 - the [AI Provider for Jev](https://github.com/soderlind/ai-provider-for-jev)
   plugin;
-- a TypeSafe API key.
+- a TypeSafe API key;
+- optionally, [bbPress](https://bbpress.org/) if you also want forum topics
+  and replies triaged.
 
 The AI Provider for Jev owns the API key, model selection, and HTTP transport.
 Jev Comment Triage owns the WordPress comment lifecycle and moderation policy.
@@ -105,7 +109,37 @@ The plugin never publishes a comment that WordPress would have held. A clean
 assessment can preserve an original approval, but it cannot override the
 site's existing moderation policy.
 
-### 6. Test the queue with WP-CLI
+### 6. Edit a comment
+
+When an untrusted author changes the text of an approved or held comment, the
+plugin holds it, queues it again, and replaces the stored assessment. The
+comment's status before the edit becomes the new base decision, so editing a
+held comment can never publish it.
+
+Edits by users who can `moderate_comments`, edits that leave the text
+unchanged, and spam or trashed comments are not sent to Jev again. If Jev
+answers for an old version of a comment that was edited or deleted while the
+request was in flight, the plugin discards that answer.
+
+### 7. Triage bbPress topics and replies
+
+If bbPress is active, nothing else needs to be configured. New topics and
+replies, and edits made with bbPress's edit forms, are held as pending and
+queued in the same drain as comments, oldest first.
+
+- A topic is judged against its forum's title and description.
+- A reply is judged against its topic.
+- Forum moderators (users with bbPress's `moderate` capability on the forum)
+  are not triaged.
+- A post bbPress would already hold, such as a reply to a pending topic, can
+  only be marked as spam or stay held.
+
+Decisions use bbPress's own approve, unapprove, and spam functions, so forum
+counts, subscriber notifications, and **Unspam** keep working. Go to
+**Topics** or **Replies** to see the **Jev** column. Edits made in the
+wp-admin post editor are not triaged again.
+
+### 8. Test the queue with WP-CLI
 
 Use WordPress functions through WP-CLI to inspect the scheduled event and a
 comment's stored assessment:
@@ -116,7 +150,15 @@ wp comment list --status=hold --format=table
 wp comment meta get COMMENT_ID _jev_triage --format=json
 ```
 
-Replace `COMMENT_ID` with a real comment ID. To run due cron events manually
+Replace `COMMENT_ID` with a real comment ID. Forum topics and replies store
+their assessment as post meta with the same key:
+
+```sh
+wp post list --post_type=topic,reply --post_status=pending --format=table
+wp post meta get POST_ID _jev_triage --format=json
+```
+
+To run due cron events manually
 in a development environment:
 
 ```sh
@@ -235,8 +277,9 @@ add_filter(
 );
 ```
 
-`jct_batch_size` limits comments selected by one drain. The per-request limit
-controls how many comments on one post share one Jev request. Keep both within
+`jct_batch_size` limits the comments and forum posts selected by one drain.
+The per-request limit controls how many comments on one post, topics in one
+forum, or replies to one topic share one Jev request. Keep both within
 the provider and site's operational limits. The plugin splits a request
 rejected with HTTP 413 or 422 to isolate the offending comment.
 
@@ -260,8 +303,8 @@ comment such as “Thanks!” may be perfectly appropriate on one site.
 ## 301: Build a WordPress workflow around the result
 
 This level is for a developer who wants to observe or extend moderation after
-the plugin makes a decision. It uses the plugin's `jct_triaged` action instead
-of calling the TypeSafe API directly.
+the plugin makes a decision. It uses the plugin's `jct_triaged` and
+`jct_triaged_forum_post` actions instead of calling the TypeSafe API directly.
 
 ### 1. Record a moderation audit note
 
@@ -289,6 +332,29 @@ add_action(
 
 `$decision` is `spam`, `1`, or `0`. The assessment source is normally `jev`,
 and can also be `cache` or `rule`.
+
+For bbPress, use `jct_triaged_forum_post`. It receives the same arguments plus
+`$type`, which is `topic` or `reply`. Store the audit note as post meta:
+
+```php
+add_action(
+	'jct_triaged_forum_post',
+	static function ( int $post_id, array $assessment, string $decision, string $type ): void {
+		update_post_meta(
+			$post_id,
+			'_my_jev_audit',
+			[
+				'type'     => $type,
+				'decision' => $decision,
+				'source'   => (string) ( $assessment['source'] ?? 'jev' ),
+				'updated'  => current_time( 'mysql', true ),
+			]
+		);
+	},
+	10,
+	4
+);
+```
 
 ### 2. Notify moderators about held comments
 
@@ -437,7 +503,9 @@ Check all of these cases:
 3. an abusive comment about the post;
 4. an off-topic but non-spam comment;
 5. a malformed or unavailable-provider case;
-6. a comment WordPress would already hold.
+6. a comment WordPress would already hold;
+7. an edit that changes the text of an approved comment;
+8. if bbPress is active, a new topic and a reply from a non-moderator.
 
 The expected safety property is that no Jev result publishes a comment that
 WordPress would have held. Keep the site's own moderation settings enabled
