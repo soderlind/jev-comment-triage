@@ -6,16 +6,31 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-28
+
 ### Added
 
+- bbPress support: new and edited forum topics and replies are triaged with
+  the same pipeline, decision logic, and spam cache as comments. Topics are
+  judged against their forum and replies against their topic. Decisions use
+  bbPress's moderation functions, without reporting automated spam decisions
+  to Akismet. Forum moderators are not triaged. A **Jev** column shows results
+  on the Topics and Replies screens.
+- Edited comments are triaged again when their text changes. An edit can
+  never publish a comment that was held.
+- `jct_triaged_forum_post` action.
 - `benchmark/`: a head-to-head benchmark of Jev against Akismet on spam
   detection, with the results, a run script, and per-comment output. It uses
   the fixtures and the public UCI YouTube Spam Collection.
+- Playwright acceptance suite in `tests/acceptance/` (`npm run test:acceptance`)
+  covering comments, bbPress topics and replies, edits, the admin column, and
+  the no-provider path. Criteria are in `tests/acceptance/CRITERIA.md`.
 
 ### Changed
 
 - The README keeps a summary of the benchmarks. The detailed results for all
   three are now in `benchmark/README.md`.
+- The architecture docs and diagrams now cover bbPress and edit re-triage.
 
 ## [2.3.0] - 2026-11-24
 
@@ -188,6 +203,7 @@ All notable changes to this project are documented here. The format is based on
 - Initial release: synchronous spam + toxicity triage on `pre_comment_approved`,
   scores stored as comment meta, and a "Jev" column on the admin Comments screen.
 
+[2.4.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.4.0
 [2.3.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.3.0
 [2.2.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.2.0
 [2.1.0]: https://github.com/soderlind/jev-comment-triage/releases/tag/2.1.0

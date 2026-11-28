@@ -190,3 +190,24 @@ it(
 		);
 	}
 );
+
+it(
+	'asks whether a forum reply fits its topic',
+	function (): void {
+		$provider = static function ( array $state, array $questions ): array {
+			expect( $questions['c0_relevance']['instructions']['question'] )->toMatch( '/forum reply .* forum topic/' );
+			return [ 'answers' => assessment_answers( 'c0_' ) ];
+		};
+
+		$results = ( new Assessment( $provider ) )->assess(
+			[
+				'post_title'   => 'Topic',
+				'post_content' => 'Body',
+			],
+			[ 5 => assessment_item( 'An answer' ) ],
+			'reply'
+		);
+
+		expect( $results[5]['relevance']['choice'] )->toBe( 'on_topic' );
+	}
+);

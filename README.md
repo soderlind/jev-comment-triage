@@ -1,6 +1,7 @@
 # Jev Comment Triage
 
-Auto-moderate WordPress comments with [TypeSafe](https://docs.typesafe.ai/introduction)'s
+Auto-moderate WordPress comments and [bbPress](#bbpress-forums) forum topics
+and replies with [TypeSafe](https://docs.typesafe.ai/introduction)'s
 **Jev** model, via the [AI Provider for Jev](https://github.com/soderlind/ai-provider-for-jev)
 plugin. For every comment Jev answers three independent questions in the
 context of its post: how it relates to the post, whether it is spam, and
@@ -15,7 +16,7 @@ AI plugin's Comment Moderation with OpenAI `gpt-5.6-luna` routed 24 / 60, and
 Jev was about 165× faster per comment. On 100 spam comments from a public
 dataset, Jev caught 52 and Akismet caught 2. See the [benchmark](#benchmark).
 
-[Requirements](#requirements) · [Installation](#installation) · [How it works](#how-it-works) · [What Jev is asked](#what-jev-is-asked) · [Decision logic](#decision-logic) · [Fewer calls](#fewer-calls-when-the-answer-is-known) · [Hooks](#hooks) · [Privacy](#privacy) · [Benchmark](#benchmark) · [Architecture](#architecture)
+[Requirements](#requirements) · [Installation](#installation) · [How it works](#how-it-works) · [bbPress](#bbpress-forums) · [What Jev is asked](#what-jev-is-asked) · [Decision logic](#decision-logic) · [Fewer calls](#fewer-calls-when-the-answer-is-known) · [Hooks](#hooks) · [Privacy](#privacy) · [Benchmark](#benchmark) · [Architecture](#architecture)
 
 ## Requirements
 
@@ -56,6 +57,14 @@ dataset, Jev caught 52 and Akismet caught 2. See the [benchmark](#benchmark).
    chunk pending without splitting. Comments are held before triage. The drain's
    best-effort lock reduces overlap but does not prevent concurrent processing.
 
+5. **On edit** (`wp_update_comment_data`, `edit_comment`) — when an
+   untrusted author's approved or held comment changes, it is held and queued
+   again, replacing the stored assessment. Edits by comment moderators, edits
+   that leave the text unchanged, and spam or trashed comments are skipped.
+   The comment's status before the edit becomes the new base decision, so
+   editing a held comment can never publish it. A comment that was still
+   waiting for its first triage keeps its original base.
+
 The answers and decision are stored as the `_jev_triage` comment meta and shown
 in a **Jev** column on the admin Comments screen.
 
@@ -78,6 +87,31 @@ columns, and other comment types it is filtered to moderate are untouched.
 Return `false` from `jct_override_ai_moderation` to let both run. For how the
 two compare, see the [benchmark](benchmark/README.md#jev-vs-the-ai-plugins-comment-moderation-openai).
 
+## bbPress forums
+
+When [bbPress](https://bbpress.org/) is active, new and edited **topics** and
+**replies** go through the same pipeline, decision logic, and spam cache:
+
+- **Held on submit** — the `bbp_new_topic_pre_insert` and
+  `bbp_new_reply_pre_insert` filters run last, so Akismet and bbPress's own
+  moderation checks have already chosen a status. A post bbPress would publish
+  is held as pending with base *approve*; a post bbPress holds (for example, a
+  reply to a pending topic) keeps base *hold*, so triage can only spam it or
+  leave it held. Forum moderators (`moderate` on the forum) are not triaged.
+- **Context** — a topic, sent as its title and body, is judged against its
+  forum's title and description; a reply is judged against its topic.
+- **Decisions** use bbPress's own moderation functions (`bbp_approve_*`,
+  `bbp_unapprove_*`, `bbp_spam_*`), so forum counts, subscriber notifications,
+  and *Unspam* keep working. bbPress's Akismet extension is not told about
+  these automated spam decisions, matching how WordPress only reports
+  comment spam that a person marks.
+- **Edits** made with bbPress's edit forms are triaged again, as for comments.
+  Edits in the post editor in wp-admin are not.
+
+Results are stored as `_jev_triage` post meta and shown in a **Jev** column on
+the Topics and Replies screens. Comments and forum posts share the drain,
+oldest first.
+
 ## What Jev is asked
 
 | Question | Type | Why this type |
@@ -85,6 +119,10 @@ two compare, see the [benchmark](benchmark/README.md#jev-vs-the-ai-plugins-comme
 | How does the comment relate to the post? | Choice: `on_topic`, `off_topic`, `unclear` | The options are mutually exclusive; its `confidence` says whether to trust the pick. |
 | Is the comment spam (promotion, scam, phishing, link-dropping)? | Noul (probability of yes) | Spam can mention the post, so it is not an alternative to on-topic. |
 | Does the comment contain insults, harassment, threats, or hate? | Noul | Abuse can be on-topic too. |
+
+For forum posts, the relevance question asks whether a topic fits its forum,
+or whether a reply relates to its topic; the spam and abuse questions are the
+same.
 
 Asking these separately matters. An abusive comment about the post is clearly
 on-topic *and* clearly abusive; a single "pick one category" question can only
@@ -130,13 +168,14 @@ Thresholds rise with the cost of a wrong action:
 | Hook | Type | Purpose |
 | ---- | ---- | ------- |
 | `jct_thresholds` | filter | Decision thresholds: `spam` (0.90), `abusive` (0.50), `relevance` (0.80), `clean` (0.20). Returned values are merged over the defaults and clamped to 0–1. Receives the assessment as its second argument. |
-| `jct_batch_size` | filter | Comments processed per drain tick (default 20). |
-| `jct_comments_per_request` | filter | Comments on the same post sent in one Jev request (default 20, i.e. 60 questions). |
+| `jct_batch_size` | filter | Comments and forum posts processed per drain tick (default 20). |
+| `jct_comments_per_request` | filter | Comments on the same post, topics in the same forum, or replies to the same topic sent in one Jev request (default 20, i.e. 60 questions). |
 | `jct_spam_cache` | filter | Return `true` to skip Jev for cached spam texts (default `false`, shadow mode). |
 | `jct_min_words` | filter | Hold link-free comments with fewer words without calling Jev (default `0`, off). |
 | `jct_include_author_details` | filter | Whether to send the author name, URL, and email to the AI service (default `true`). Return `false` for stricter privacy. |
 | `jct_override_ai_moderation` | filter | Whether Jev replaces the AI plugin's automatic Comment Moderation for regular comments Jev holds (default `true`). |
-| `jct_triaged` | action | Fires after a decision: `do_action( 'jct_triaged', $comment_id, $assessment, $decision )`. |
+| `jct_triaged` | action | Fires after a comment decision: `do_action( 'jct_triaged', $comment_id, $assessment, $decision )`. |
+| `jct_triaged_forum_post` | action | Fires after a bbPress decision: `do_action( 'jct_triaged_forum_post', $post_id, $assessment, $decision, $type )`, where `$type` is `topic` or `reply`. |
 
 ```php
 // Require a stronger on-topic signal, act on cached spam, stop sending author PII.
@@ -147,7 +186,8 @@ add_filter( 'jct_include_author_details', '__return_false' );
 
 ## Privacy
 
-Comment text and the related post title and content (and, unless disabled via
+Comment text and the related post title and content — or, for bbPress, the
+topic or reply text and the related forum or topic — (and, unless disabled via
 `jct_include_author_details`, the author name, email, and URL) are sent to the
 TypeSafe (Jev) service. The spam cache stores only a salted hash of the
 comment and its author details, plus two probabilities. The plugin registers a

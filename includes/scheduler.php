@@ -53,28 +53,55 @@ function drain(): void {
 	try {
 		$batch = (int) apply_filters( 'jct_batch_size', 20 );
 
-		$comments = get_comments(
-			[
-				'status'     => 'hold',
-				'number'     => $batch,
-				'orderby'    => 'comment_date_gmt',
-				'order'      => 'ASC',
-				'meta_query' => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Queue markers are stored as comment metadata.
-					'relation' => 'AND',
-					[
-						'key'     => PENDING_META,
-						'compare' => 'EXISTS',
-					],
-					[
-						'key'     => META_KEY,
-						'compare' => 'NOT EXISTS',
-					],
-				],
-			]
-		);
+		$items = array_merge( comment_queue( $batch ), forum_queue( $batch ) );
 
-		process_comments( $comments );
+		usort( $items, static fn( array $a, array $b ): int => strcmp( (string) $a['date'], (string) $b['date'] ) );
+
+		process_items( array_slice( $items, 0, max( 0, $batch ) ) );
 	} finally {
 		delete_transient( LOCK_KEY );
 	}
+}
+
+/**
+ * Meta query that selects queued, not yet triaged items.
+ *
+ * @return array<int|string, mixed>
+ */
+function queue_meta_query(): array {
+	return [
+		'relation' => 'AND',
+		[
+			'key'     => PENDING_META,
+			'compare' => 'EXISTS',
+		],
+		[
+			'key'     => META_KEY,
+			'compare' => 'NOT EXISTS',
+		],
+	];
+}
+
+/**
+ * Select held, untriaged comments, oldest first.
+ *
+ * @param int $limit Maximum number of items.
+ * @return array<int, array<string, mixed>>
+ */
+function comment_queue( int $limit ): array {
+	if ( $limit < 1 ) {
+		return [];
+	}
+
+	$comments = get_comments(
+		[
+			'status'     => 'hold',
+			'number'     => $limit,
+			'orderby'    => 'comment_date_gmt',
+			'order'      => 'ASC',
+			'meta_query' => queue_meta_query(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Queue markers are stored as comment metadata.
+		]
+	);
+
+	return array_map( __NAMESPACE__ . '\\comment_item', array_filter( (array) $comments, static fn( $comment ): bool => $comment instanceof \WP_Comment ) );
 }
